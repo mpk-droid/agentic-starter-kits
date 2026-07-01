@@ -91,7 +91,9 @@ jobs:
           cluster-api-url: ${{ secrets.CLUSTER_API_URL }}
 
       - name: Run integration test
-        if: matrix.agent.name != 'autogen-mcp-agent' || vars.MCP_SERVER_URL != ''
+        if: >-
+          (matrix.agent.name != 'autogen-mcp-agent' || vars.MCP_SERVER_URL != '') &&
+          (matrix.agent.name != 'langgraph-db-memory-agent' || vars.POSTGRES_HOST != '')
         working-directory: ${{ matrix.agent.dir }}
         env:
           API_KEY: ${{ matrix.agent.name == 'vanilla-python-openai-responses-agent' && secrets.OPENAI_API_KEY || vars.API_KEY }}
