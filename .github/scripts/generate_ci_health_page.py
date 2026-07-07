@@ -223,14 +223,18 @@ def summarize_workflow(
         key=lambda run: run.created_at,
         reverse=True,
     )
-    latest = relevant[0] if relevant else None
+    # Ignore in-progress runs for display. workflow_run can rebuild while sibling
+    # workflows are still running; showing them as "latest" leaves stale status
+    # on the page until the next deploy finishes.
+    completed = [run for run in relevant if run.status == "completed"]
+    latest = completed[0] if completed else None
     pass_rate, total, passed = compute_pass_rate(runs)
     return WorkflowSummary(
         workflow_file=workflow["file"],
         display_name=workflow["name"],
         description=workflow["description"],
         latest=latest,
-        recent_runs=tuple(relevant[:5]),
+        recent_runs=tuple(completed[:5]),
         pass_rate_7d=pass_rate,
         total_runs_7d=total,
         passed_runs_7d=passed,

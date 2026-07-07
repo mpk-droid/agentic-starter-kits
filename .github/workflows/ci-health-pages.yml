@@ -36,7 +36,9 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  # Let overlapping workflow_run deploys finish; canceling mid-deploy left the
+  # site stuck on stale "in progress" status when the final run was aborted.
+  cancel-in-progress: false
 
 jobs:
   deploy:

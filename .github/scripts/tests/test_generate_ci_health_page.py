@@ -114,6 +114,43 @@ def test_empty_workflow_summary():
     assert summary.recent_runs == ()
 
 
+def test_in_progress_run_is_not_latest():
+    now = datetime.now(UTC)
+    ts_new = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    ts_old = (now - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    runs = [
+        WorkflowRun(
+            id=10,
+            name="Agent Tests",
+            event="push",
+            head_branch="main",
+            status="in_progress",
+            conclusion=None,
+            html_url="https://example.com/10",
+            created_at=ts_new,
+            updated_at=ts_new,
+            run_started_at=ts_new,
+        ),
+        WorkflowRun(
+            id=9,
+            name="Agent Tests",
+            event="push",
+            head_branch="main",
+            status="completed",
+            conclusion="success",
+            html_url="https://example.com/9",
+            created_at=ts_old,
+            updated_at=ts_old,
+            run_started_at=ts_old,
+        ),
+    ]
+    summary = summarize_workflow(WORKFLOWS[1], runs)
+    assert summary.latest is not None
+    assert summary.latest.id == 9
+    assert summary.latest.conclusion == "success"
+    assert all(run.status == "completed" for run in summary.recent_runs)
+
+
 def test_unavailable_workflow_renders_error_card():
     summary = unavailable_workflow_summary(
         WORKFLOWS[2],

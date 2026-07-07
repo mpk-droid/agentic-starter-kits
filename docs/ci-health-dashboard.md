@@ -22,7 +22,8 @@ Pull request runs are excluded from the summary to keep the page focused on shar
 
 ## Update cadence
 
-- **Push model:** rebuilds when any in-scope CI workflow completes on `main` or via `schedule` (`workflow_run` trigger in `.github/workflows/ci-health-pages.yml`)
+- **Push model:** rebuilds when any in-scope CI workflow completes on `main` or via `schedule` (`workflow_run` trigger in `.github/workflows/ci-health-pages.yml`). Overlapping deploys are queued (not cancelled) so the last run publishes fresh data.
+- The dashboard shows the latest **completed** run per workflow; in-progress runs are ignored so mid-push rebuilds do not leave stale status on the page.
 - Manual refresh via **Actions → CI Health Pages → Run workflow**
 - Also rebuilds when dashboard generator or workflow files change on `main`
 
