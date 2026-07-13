@@ -1,6 +1,6 @@
 # MLflow Tracing Integration
 
-This document covers how MLflow tracing is integrated into the agent templates in this repository: how it works, how it differs per framework, how to configure it, how to test it, and known issues.
+This document covers MLflow tracing for the **Python-based** agent templates in this repository (LangGraph, LlamaIndex, CrewAI, Vanilla Python, Google ADK, A2A). It explains how tracing works, how it differs per framework, how to configure it, how to test it, and known issues. Non-Python agents (e.g., claude-code) have their own tracing setup — see their respective directories.
 
 ---
 
@@ -43,6 +43,8 @@ uv run --extra tracing mlflow server --port 5000
 
 This keeps MLflow out of the core dependencies — agents run without it when tracing is disabled.
 
+> **OpenShift / RHOAI users:** For TLS verification, authentication, and RBAC configuration when connecting to MLflow on OpenShift, see [MLflow on OpenShift: Authentication and TLS](docs/mlflow-openshift-auth-and-tls.md).
+
 ---
 
 ## Design Principles
@@ -59,7 +61,7 @@ This keeps MLflow out of the core dependencies — agents run without it when tr
 
 ### Tracing Module (`tracing.py`)
 
-Every agent has a `tracing.py` module at `src/<package_name>/tracing.py` that exports two main functions:
+Every Python agent has a `tracing.py` module at `src/<package_name>/tracing.py` that exports two main functions:
 
 #### `enable_tracing()`
 
@@ -82,7 +84,8 @@ Only present in agents that need manual tracing (Vanilla Python and CrewAI). Lan
 
 #### `check_mlflow_health(mlflow_tracking_uri, max_wait_time, retry_interval)`
 
-Polls `{mlflow_tracking_uri}/health` with retry logic. Raises `RuntimeError` if the server is unreachable after `max_wait_time` seconds. The timeout for each individual HTTP request is capped at `min(5, remaining_budget)` to respect the overall time budget.
+Polls `{mlflow_tracking_uri}/health` with retry logic. Raises `RuntimeError` if the server is unreachable after `max_wait_time` seconds. The timeout for each individual HTTP request is capped at `min(5, remaining_budget)` to respect the overall time budget. When auth or TLS env vars are set (`MLFLOW_TRACKING_TOKEN`, `MLFLOW_TRACKING_AUTH`, `MLFLOW_TRACKING_SERVER_CERT_PATH`, `MLFLOW_TRACKING_INSECURE_TLS`), the health check applies them to the raw `requests.get()` call — the MLflow SDK is not yet configured at this point. See [MLflow on OpenShift: Authentication and TLS](docs/mlflow-openshift-auth-and-tls.md) for details on each variable.
+NOTE : Currently only [`react_agent`](agents/langgraph/templates/react_agent/) implements this — other python agents' health checks do not yet handle auth or TLS.
 
 ### Startup Flow
 
@@ -284,6 +287,75 @@ The `TracerProvider` must be set **before** any ADK components are used (i.e., `
 
 No `LLM_PROVIDER` env var needed — ADK traces LLM calls through its own instrumentation regardless of the underlying model connector (LiteLLM, Gemini, etc.).
 
+### A2A (LangGraph + CrewAI)
+
+**Autolog:** Dual framework — `mlflow.langchain.autolog()` for LangGraph server + `mlflow.crewai.autolog()` + provider-specific autolog for CrewAI server
+**Manual tracing:** Yes (tool `_run` methods in `crew_a2a_server.py` for CrewAI server only)
+
+This agent runs **two separate server processes** in the same deployment, each requiring its own tracing configuration:
+
+#### LangGraph Server (`langgraph_a2a_server.py`)
+
+**Level A** — Full auto-tracing via `mlflow.langchain.autolog()`. No manual wrapping needed.
+
+- Calls `enable_tracing_langgraph()` at startup
+- Captures all three layers: agent orchestration (LangGraph execution), tool execution (`ask_crew_specialist`), and LLM calls (`ChatOpenAI`)
+- No `LLM_PROVIDER` env var needed — LangChain autolog traces all LangChain components regardless of base_url
+
+#### CrewAI Server (`crew_a2a_server.py`)
+
+**Level B** — Partial autolog via `mlflow.crewai.autolog()` + provider-specific autolog. Manual tool wrapping required.
+
+- Calls `enable_tracing_crewai()` at startup
+- Tool spans manually wrapped in `_run_crew()`:
+
+  ```python
+  tools = [DummyWebSearchTool()]
+  for tool in tools:
+      tool._run = wrap_func_with_mlflow_trace(
+          tool._run, span_type="tool", name=tool.name
+      )
+  ```
+
+- LLM provider autolog controlled by `LLM_PROVIDER` env var (default: `litellm`)
+
+#### Shared Tracing Module
+
+`src/a2a_langgraph_crewai/tracing.py` contains:
+
+- `enable_tracing_langgraph()` — Level A pattern (langchain autolog only)
+- `enable_tracing_crewai()` — Level B pattern (crewai + provider autolog, sets `_TRACING_ENABLED` global)
+- `wrap_func_with_mlflow_trace()` — for CrewAI tool wrapping
+
+Both servers emit traces to the **same MLflow experiment** when `MLFLOW_TRACKING_URI` is set. This creates a unified view of the full A2A interaction: the LangGraph orchestrator trace includes a tool call to `ask_crew_specialist`, which makes an HTTP request to the CrewAI server, and the CrewAI server emits a separate trace for processing that request.
+
+**Differentiating traces:** Traces from each server can be distinguished two ways:
+
+1. **Span names** — Framework-specific span names naturally differentiate traces (e.g., `LangGraph` vs `CrewAI`)
+2. **Separate experiments** — Optional per-server experiment names:
+   - `MLFLOW_EXPERIMENT_NAME_LANGGRAPH` — LangGraph server experiment
+   - `MLFLOW_EXPERIMENT_NAME_CREWAI` — CrewAI server experiment
+   - If not set, both use `MLFLOW_EXPERIMENT_NAME` (unified view)
+
+**Resulting spans (LangGraph server):**
+
+| Span Name | Type | Source |
+|---|---|---|
+| `LangGraph` | CHAIN | `mlflow.langchain.autolog()` |
+| `ChatOpenAI` | CHAT_MODEL | `mlflow.langchain.autolog()` |
+| `tools` | CHAIN | `mlflow.langchain.autolog()` |
+| `ask_crew_specialist` | TOOL | `mlflow.langchain.autolog()` |
+
+**Resulting spans (CrewAI server):**
+
+| Span Name | Type | Source |
+|---|---|---|
+| `CrewAI` | AGENT | `mlflow.crewai.autolog()` |
+| `Task` | CHAIN | `mlflow.crewai.autolog()` |
+| `Agent` | AGENT | `mlflow.crewai.autolog()` |
+| `Web Search` | TOOL | Manual (`wrap_func_with_mlflow_trace` in `crew_a2a_server.py`) |
+| `Completions` or `litellm-completion` | CHAT_MODEL / LLM | Provider-specific autolog |
+
 ---
 
 ## Configuration
@@ -298,10 +370,11 @@ No `LLM_PROVIDER` env var needed — ADK traces LLM calls through its own instru
 | `MLFLOW_HTTP_REQUEST_TIMEOUT` | `120` (MLflow default) | Timeout for MLflow HTTP requests during operation. |
 | `MLFLOW_HTTP_REQUEST_MAX_RETRIES` | MLflow default | Max retries for MLflow HTTP requests. |
 | `LLM_PROVIDER` | `litellm` | **CrewAI only.** Which provider autolog to enable. |
-| `MLFLOW_TRACKING_TOKEN` | *(unset)* | **OpenShift only.** Auth token for MLflow on OpenShift. |
-| `MLFLOW_TRACKING_INSECURE_TLS` | *(unset)* | **OpenShift only.** Set `"true"` for self-signed certs. |
-| `MLFLOW_WORKSPACE` | *(unset)* | **OpenShift only.** Project/workspace name. |
-| `MLFLOW_TRACKING_AUTH` | *(unset)* | **OpenShift only.** Use K8s service account auth. |
+| `MLFLOW_TRACKING_TOKEN` | *(unset)* | Bearer token for MLflow auth. Used for any remote server requiring authentication. |
+| `MLFLOW_TRACKING_AUTH` | *(unset)* | K8s service account auth (`kubernetes-namespaced` for MLflow 3.11+). Python SDK only. |
+| `MLFLOW_WORKSPACE` | *(unset)* | MLflow workspace name (auto-detected with `kubernetes-namespaced` auth). |
+| `MLFLOW_TRACKING_SERVER_CERT_PATH` | *(unset)* | Path to CA cert for TLS verification. Python SDK only. |
+| `MLFLOW_TRACKING_INSECURE_TLS` | *(unset)* | Set `"true"` to skip TLS verification (not recommended — prefer `MLFLOW_TRACKING_SERVER_CERT_PATH`). Python SDK only. |
 
 ### Local Setup
 
@@ -323,13 +396,24 @@ mlflow server --port 5000
 
 ### OpenShift Cluster Setup
 
+**Local development** (workstation → external route):
+
 ```ini
-MLFLOW_TRACKING_URI="https://<openshift-dashboard-url>/mlflow"
-MLFLOW_TRACKING_TOKEN="<your-openshift-token>"
+MLFLOW_TRACKING_URI="https://mlflow-redhat-ods-applications.apps.<cluster>/mlflow"
+MLFLOW_TRACKING_TOKEN="<paste token from: oc create token default>"
 MLFLOW_EXPERIMENT_NAME="<your-experiment-name>"
-MLFLOW_TRACKING_INSECURE_TLS="true"
-MLFLOW_WORKSPACE="default"
+MLFLOW_WORKSPACE="<namespace>"
 ```
+
+**In-pod deployment** (MLflow 3.11+ / RHOAI 3.4 GA):
+
+```ini
+MLFLOW_TRACKING_URI="https://mlflow-redhat-ods-applications.apps.<cluster>/mlflow"
+MLFLOW_TRACKING_AUTH="kubernetes-namespaced"
+MLFLOW_EXPERIMENT_NAME="<your-experiment-name>"
+```
+
+For complete TLS verification, authentication modes, RBAC setup, and the internal service URL configuration, see [MLflow on OpenShift: Authentication and TLS](docs/mlflow-openshift-auth-and-tls.md).
 
 ---
 
@@ -364,6 +448,7 @@ Every agent's traces consist of up to three layers. Which layers are present dep
 | **LlamaIndex** | `mlflow.llama_index.autolog()` | Same autolog | Same autolog |
 | **CrewAI** | Provider-specific autolog | Manual wrapping | `mlflow.crewai.autolog()` |
 | **Google ADK** | ADK OTel auto-tracing | ADK OTel auto-tracing | ADK OTel auto-tracing |
+| **A2A (LangGraph+CrewAI)** | LangGraph: `mlflow.langchain.autolog()`<br>CrewAI: Provider-specific autolog | LangGraph: Same autolog<br>CrewAI: Manual wrapping | LangGraph: Same autolog<br>CrewAI: `mlflow.crewai.autolog()` |
 
 ### Autolog Coverage Levels
 

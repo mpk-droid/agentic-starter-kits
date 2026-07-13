@@ -54,10 +54,10 @@ for cluster-native execution, tracking, and integration with EvalHub workflows.
 
 ### Adding a new agent's fixtures
 
-1. Create `agents/<framework>/<agent_name>/evalhub/tool_use.yaml` with
+1. Create `agents/<framework>/templates/<agent_name>/evalhub/tool_use.yaml` with
    `queries`, `expected_tools`, `expected_elements`
 2. Add a `COPY` line to `evals/evalhub_adapter/Containerfile`:
-   `COPY agents/<framework>/<agent_name>/evalhub/ ./fixtures/<short_name>/`
+   `COPY agents/<framework>/templates/<agent_name>/evalhub/ ./fixtures/<short_name>/`
 3. Use `fixtures_path: fixtures/<short_name>` in your eval submission YAML
 4. Set `known_tools` in parameters to match the agent's available tools
 
@@ -234,14 +234,30 @@ There are two different YAMLs in this flow:
   - Used by `evalhub eval run --config ...`
   - Defines model endpoint, provider, and benchmark `parameters`
 - **Fixture YAMLs (already in repo/image):**
-  - `agents/langgraph/react_agent/evalhub/tool_use.yaml`
-  - `agents/vanilla_python/openai_responses_agent/evalhub/tool_use.yaml`
+  - `agents/langgraph/templates/react_agent/evalhub/tool_use.yaml`
+  - `agents/vanilla_python/templates/openai_responses_agent/evalhub/tool_use.yaml`
+  - `agents/crewai/templates/websearch_agent/evalhub/tool_use.yaml`
+  - `agents/langgraph/templates/agentic_rag/evalhub/tool_use.yaml`
+  - `agents/langgraph/templates/react_with_database_memory/evalhub/tool_use.yaml`
+  - `agents/llamaindex/templates/websearch_agent/evalhub/tool_use.yaml`
+  - `agents/langflow/templates/simple_tool_calling_agent/evalhub/tool_use.yaml`
+  - `agents/langgraph/templates/human_in_the_loop/evalhub/tool_use.yaml`
+  - `agents/google/templates/adk/evalhub/tool_use.yaml`
+  - `agents/a2a/templates/langgraph_crewai_agent/evalhub/tool_use.yaml`
   - These contain golden queries (`queries`, `expected_tools`,
     `expected_elements`) used by the adapter scorers
   - At image build time, these are copied into the adapter container under
     `fixtures/`:
-    - `agents/langgraph/react_agent/evalhub/*` -> `fixtures/langgraph_react/`
-    - `agents/vanilla_python/openai_responses_agent/evalhub/*` -> `fixtures/vanilla_python/`
+    - `agents/langgraph/templates/react_agent/evalhub/*` -> `fixtures/langgraph_react/`
+    - `agents/vanilla_python/templates/openai_responses_agent/evalhub/*` -> `fixtures/vanilla_python/`
+    - `agents/crewai/templates/websearch_agent/evalhub/*` -> `fixtures/crewai_websearch/`
+    - `agents/langgraph/templates/agentic_rag/evalhub/*` -> `fixtures/agentic_rag/`
+    - `agents/langgraph/templates/react_with_database_memory/evalhub/*` -> `fixtures/langgraph_db_memory/`
+    - `agents/llamaindex/templates/websearch_agent/evalhub/*` -> `fixtures/llamaindex_websearch/`
+    - `agents/langflow/templates/simple_tool_calling_agent/evalhub/*` -> `fixtures/langflow_tool_calling/`
+    - `agents/langgraph/templates/human_in_the_loop/evalhub/*` -> `fixtures/langgraph_hitl/`
+    - `agents/google/templates/adk/evalhub/*` -> `fixtures/google_adk/`
+    - `agents/a2a/templates/langgraph_crewai_agent/evalhub/*` -> `fixtures/a2a_langgraph_crewai/`
   - You select which fixture set to use via `parameters.fixtures_path`
 
 Create one file per agent. To evaluate both agents, submit two jobs.
@@ -265,8 +281,7 @@ benchmarks:
       verify_ssl: true
       fixtures_path: fixtures/langgraph_react
       mlflow_tracking_uri: https://<mlflow-route>
-      mlflow_experiment_name: <unique-run-experiment>
-      mlflow_trace_experiment_name: <agent-experiment>
+      mlflow_experiment_name: <agent-experiment>
 ```
 
 **`eval-openai-responses-agent.yaml`** (vanilla_python openai_responses_agent):
@@ -288,8 +303,7 @@ benchmarks:
       verify_ssl: true
       fixtures_path: fixtures/vanilla_python
       mlflow_tracking_uri: https://<mlflow-route>
-      mlflow_experiment_name: <unique-run-experiment>
-      mlflow_trace_experiment_name: <agent-experiment>
+      mlflow_experiment_name: <agent-experiment>
 ```
 
 Notes:
@@ -298,6 +312,13 @@ Notes:
 - `fixtures_path` must match what the adapter image contains:
   - `react_agent` -> `fixtures/langgraph_react`
   - `openai_responses_agent` -> `fixtures/vanilla_python`
+  - `crewai_websearch_agent` -> `fixtures/crewai_websearch`
+  - `agentic_rag` -> `fixtures/agentic_rag`
+  - `llamaindex_websearch` -> `fixtures/llamaindex_websearch`
+  - `langflow_tool_calling` -> `fixtures/langflow_tool_calling`
+  - `langgraph_hitl` -> `fixtures/langgraph_hitl`
+  - `google_adk` -> `fixtures/google_adk`
+  - `a2a_langgraph_crewai` -> `fixtures/a2a_langgraph_crewai`
   - These are relative to the container WORKDIR (`/opt/app-root/src`)
 - `known_tools` should match the tools your target agent is allowed to use
 - See [JobSpec parameters](#jobspec-parameters) for the full field reference
@@ -408,8 +429,8 @@ agent-specific settings from the `parameters` block:
 | `fixtures_path` | `str` | `fixtures` | No | Path to agent fixture YAMLs (relative to container WORKDIR) |
 | `stream` | `bool` | `true` | No | Use SSE streaming to capture tool calls (see below) |
 | `mlflow_tracking_uri` | `str` | — | **Yes** | MLflow server URL |
-| `mlflow_experiment_name` | `str` | — | **Yes** | MLflow experiment for run logging (use a unique name per e2e run) |
-| `mlflow_trace_experiment_name` | `str` | `mlflow_experiment_name` | No | Agent-side experiment where traces are written (for trace enrichment) |
+| `mlflow_experiment_name` | `str` | — | **Yes** | MLflow experiment for eval run logging. Use the agent's experiment (discovered from its deployment env `MLFLOW_EXPERIMENT_NAME`) so traces and eval metrics live together. |
+| `mlflow_trace_experiment_name` | `str` | `mlflow_experiment_name` | No | Experiment to read agent traces from. Only set if traces are in a different experiment than `mlflow_experiment_name`. |
 
 ### Why streaming is the default
 
@@ -433,9 +454,7 @@ Two first-class integrations (require `mlflow_tracking_uri` and
 
 1. **Trace enrichment** (per-query) — `MLflowTraceClient` from
    `harness.mlflow_client` reads agent-side traces after each query to fill
-   in token usage and any tool calls not captured via SSE streaming. Traces
-   are read from `mlflow_trace_experiment_name` (the agent's experiment),
-   which defaults to `mlflow_experiment_name` if not set separately.
+   in token usage and any tool calls not captured via SSE streaming.
    Fault-tolerant: enrichment failures are logged but do not abort the query
    or affect scoring.
 2. **Run logging** (per-job) — `_log_mlflow_run` writes aggregated scorer
@@ -443,10 +462,22 @@ Two first-class integrations (require `mlflow_tracking_uri` and
    On success, the returned MLflow run ID is propagated to EvalHub via
    `JobResults.mlflow_run_id` so `evalhub eval results` can surface it.
 
+### Experiment design
+
+The `run-e2e.sh` script discovers the agent's `MLFLOW_EXPERIMENT_NAME` from
+its deployment env vars and uses the same experiment for eval metric logging.
+This means agent traces and eval runs live in a single experiment — open the
+experiment in MLflow to see both the traces tab (per-request agent traces)
+and the runs tab (eval metric summaries) together.
+
+The adapter container requires `MLFLOW_WORKSPACE` set in the provider runtime
+env and uses mlflow >= 3.10 (workspace-aware SDK). The `run-e2e.sh` script
+sets this automatically from the namespace.
+
 ## What works now
 
 - `agentic-tool-use` benchmark: 5 golden queries per agent
-  (e.g. `agents/langgraph/react_agent/evalhub/tool_use.yaml`)
+  (e.g. `agents/langgraph/templates/react_agent/evalhub/tool_use.yaml`)
 - `agentic-tool-use` runs 4 scorers: tool_selection, tool_sequence,
   hallucinated_tools, tool_call_validity. 6 additional scorers
   (plan_coherence, completeness, latency, pii_leakage, policy_adherence,
@@ -457,17 +488,44 @@ Two first-class integrations (require `mlflow_tracking_uri` and
 - Provider registration via EvalHub REST API
 - asyncio nesting guard (thread-pool fallback for async callers)
 - Agent-specific query files (LangGraph `search` tool, vanilla Python
-  `search_price` + `search_reviews` tools)
+  `search_price` + `search_reviews` tools, CrewAI `Web Search` tool,
+  LlamaIndex `dummy_web_search` tool, LangGraph HITL `create_file` tool,
+  Langflow `get_forecast` + `search_parks` + `park_alerts` tools,
+  Google ADK `dummy_web_search` tool,
+  A2A LangGraph-CrewAI `ask_crew_specialist` tool)
+- Langflow `/api/v1/run` adapter support (`api_format=langflow_run`,
+  `flow_id`, auto_login token acquisition)
 - Unit tests (50) + integration tests (11) for adapter, config, evaluations,
   and orchestration pipeline
+
+## Inner-loop CI (RHAIENG-4158)
+
+The repository uses `.github/workflows/eval-gating.yml` for inner-loop CI
+coverage around the adapter and behavioral pytest suites:
+
+- **Deterministic Adapter Tests** (always runs on adapter-related PRs)
+  - Installs with `uv sync --frozen --extra test --extra test-mlflow`
+  - `pytest evals/evalhub_adapter/tests -m "unit or integration"`
+  - Publishes JUnit artifacts + check annotations
+- **Cluster Behavioral Tests** (conditional, cluster credentials required)
+  - Reuses the existing `tests/behavioral/` pytest inner loop against deployed
+    agents
+  - Runs `tests/behavioral/deterministic/run-btests-pytest.sh`
+  - Supports optional agent subsets via `EVAL_CLUSTER_BTESTS_AGENTS`, using
+    template-layout IDs such as `langgraph/templates/react_agent`
+
+Branch protection recommendation:
+
+- Mark `Deterministic Adapter Tests` as a **required** check for `main`.
+- Add `Cluster Behavioral Tests` as required only after cluster availability
+  and credentials management are reliable enough for routine PR gating.
 
 ## What's planned
 
 - Concurrent query execution (`asyncio.gather` with semaphore — queries
   currently run sequentially)
-- Additional evaluation suites: coherence, safety, latency (query files
-  not yet populated)
-- GitHub Actions workflow for CI / EvalHub integration (RHAIENG-4158)
+- Additional benchmark query sets for pre-wired scorers:
+  coherence, safety, latency
 - Regression dashboard
 
 ## Dependencies
@@ -477,7 +535,7 @@ Two first-class integrations (require `mlflow_tracking_uri` and
 | `eval-hub-sdk[adapter]` | `>=0.1.4` | `evalhub` | Yes |
 | `httpx` | `>=0.27` | `evalhub` | Yes |
 | `pyyaml` | `>=6.0` | `evalhub` | Yes |
-| `mlflow` | `>=2.0` | `test-mlflow` | Yes (trace enrichment + run logging) |
+| `mlflow` | `>=3.10.0` | `test-mlflow` | Yes (trace enrichment + run logging) |
 
 For container builds or local development:
 
@@ -487,9 +545,14 @@ uv pip install .[evalhub,test-mlflow]
 
 ## Running tests
 
-Tests stub `evalhub` imports if the package isn't installed (bootstrap
-lives in `conftest.py` so it runs before any test module, regardless of
-which files are selected). `uv pip install .[test]` alone is sufficient.
+Tests stub `evalhub` imports if the package isn't installed (bootstrap lives in
+`conftest.py` so it runs before any test module, regardless of which files are
+selected). For the full adapter suite, install both the `test` and
+`test-mlflow` extras.
+
+```bash
+uv sync --extra test --extra test-mlflow
+```
 
 ```bash
 # Unit tests only (fast, no network)

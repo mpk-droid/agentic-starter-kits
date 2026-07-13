@@ -4,15 +4,16 @@ Collection of production-ready LLM agent templates for Red Hat OpenShift (LangGr
 
 ## Structure
 
-- `agents/<framework>/<agent_name>/` - self-contained agents (Makefile, Dockerfile, pyproject.toml, src/, tests/)
-- `charts/agent/` - shared Helm chart for all standard agents
-- `charts/a2a-langgraph-crewai/` - specialized chart for multi-agent setup
+- `agents/<framework>/templates/<agent_name>/` - self-contained agent templates (Makefile, Dockerfile, pyproject.toml, src/, tests/)
+- `agents/<framework>/examples/<agent_name>/` - business use-case demos built on templates
+- `agents/<framework>/deployment/` - per-framework Helm charts for deployment
+- `components/<component_name>/` - shared reusable Python packages (for cross-agent concerns like auth/tracing)
 - `docs/` - guides for local dev, deployment, and adding new agents
 
 ## Commands
 
 ```bash
-# Run from any standard agent directory (e.g., agents/langgraph/react_agent/)
+# Run from any standard agent directory (e.g., agents/langgraph/templates/react_agent/)
 make init       # create .env from .env.example
 make env        # create venv + install deps with uv
 make run-app    # start FastAPI dev server (port 8000)
@@ -23,6 +24,16 @@ make deploy     # deploy to OpenShift/K8s via Helm
 make dry-run    # preview Helm manifests
 ```
 
+## Single-file verification
+
+```bash
+# Lint a single file
+ruff check path/to/file.py
+
+# Format-check a single file
+ruff format --check path/to/file.py
+```
+
 ## Code style
 
 - Python >=3.12, <3.14. Use `uv` as package manager -- never `pip` directly
@@ -30,6 +41,7 @@ make dry-run    # preview Helm manifests
 - All agents must expose `POST /chat/completions` (JSON + SSE) and `GET /health`
 - Source code in `src/<agent_name>/` within each agent directory
 - Keep agents self-contained -- never import from another agent's `src/`
+- Shared cross-agent code belongs in `components/` and should be consumed as package dependencies (not path imports into agent `src/`)
 
 ## Workflow
 
@@ -39,9 +51,14 @@ make dry-run    # preview Helm manifests
 - Never commit `.env` files -- only `.env.example` templates
 - Standard containers: UBI9 base (`registry.access.redhat.com/ubi9/python-312`), non-root UID 1001, port 8080
 
+## Tooling preferences
+
+- Prefer the Atlassian MCP server for Jira and Confluence access in this repository when it is available and authorized
+- Fall back to direct HTTP/API calls only when the Atlassian MCP server is unavailable or does not expose the needed capability
+
 ## Boundaries
 
-- Don't modify `charts/agent/` templates unless explicitly requested
+- Don't modify `agents/<framework>/deployment/` chart templates unless explicitly requested
 - Don't modify CONTRIBUTING.md, CI config, or root Makefile without asking
 - Don't refactor other agents when working on one agent
 - Don't change the API contract (`POST /chat/completions`, `GET /health`) without discussion
@@ -49,16 +66,18 @@ make dry-run    # preview Helm manifests
 
 ## Non-standard agents
 
-Two agents diverge significantly from the standard pattern:
+Several agents diverge significantly from the standard pattern:
 
-**langflow/simple_tool_calling_agent** - Podman Compose flow-import deployment, not standalone FastAPI. No Dockerfile, pyproject.toml, main.py, src/, or tests/. Different Makefile targets (`init`, `ollama`, `run`, `stop`, `clean`). Uses infra-only env vars (PostgreSQL, Langfuse, Ollama) -- not `API_KEY`/`BASE_URL`/`MODEL_ID`.
+**langflow/templates/simple_tool_calling_agent** - Podman Compose flow-import deployment, not standalone FastAPI. No Dockerfile, pyproject.toml, main.py, src/, or tests/. Different Makefile targets (`init`, `ollama`, `run`, `stop`, `clean`). Uses infra-only env vars (PostgreSQL, Langfuse, Ollama) -- not `API_KEY`/`BASE_URL`/`MODEL_ID`.
 
-**a2a/langgraph_crewai_agent** - Uses `python:3.12-slim` (not UBI9), PYTHONPATH `/app` (not `/opt/app-root/src`), `charts/a2a-langgraph-crewai/` chart, `template.env` (not `.env.example`), `entrypoint.sh` (not `main.py`), Starlette (not FastAPI). No tests/ directory.
+**a2a/templates/langgraph_crewai_agent** - Uses `python:3.12-slim` (not UBI9), PYTHONPATH `/app` (not `/opt/app-root/src`), `agents/a2a/deployment/` chart, `template.env` (not `.env.example`), `entrypoint.sh` (not `main.py`), Starlette (not FastAPI). No tests/ directory.
+
+**openclaw/deployment** - Kustomize-based deployment of OpenClaw on OpenShift. Uses pre-built image (`ghcr.io/openclaw/openclaw:latest`), not a Dockerfile. Kustomize overlays for customization (model endpoint, storage class). No Makefile, no FastAPI, no src/. Port 18789 (gateway).
 
 ## Common gotchas
 
 - `agent.yaml` is read at runtime by Makefile -- if malformed, all make targets break
-- Port mapping: local dev = `8000`, container = `8080`, Llama Stack = `8321` -- don't mix these up
+- Port mapping: local dev = `8000`, container = `8080`, OGX = `8321` -- don't mix these up
 - `images/` dir is copied into build context temporarily by `make build` -- don't put large files there
 - Makefile auto-detects podman over docker -- set `CONTAINER_CLI` to override
 - Helm secrets via `.helm-secrets.yaml` (generated by Makefile, never committed)

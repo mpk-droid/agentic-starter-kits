@@ -14,6 +14,57 @@ Thank you for your interest in contributing. This document gives a short overvie
 
 Before submitting, please read our [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you agree to uphold it.
 
+## Proposing a new agent
+
+Before writing code for a new agent template or example, validate that it belongs in this repository. Every agent in this repo should complete the sentence:
+
+> "As an AI engineer, I need to know how to build an agent using **\_\_\_\_\_** and integrate it with these RHOAI components: **\_\_\_\_\_** for **\_\_\_\_\_**"
+
+### Step 1: Run the fit check
+
+The recommended path is to validate your idea **before writing any code**. Run the fit-check skill or answer the manual questionnaire, then post the result as a GitHub Discussion. Wait for maintainer approval before proceeding to implementation.
+
+**Using the fit-check skill (recommended):**
+
+If you have [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and the [agentic-starter-kits-skills](https://github.com/red-hat-data-services/agentic-starter-kits-skills) plugin installed:
+
+```text
+/agentic-starter-kits-skills:fit-check
+```
+
+The skill asks a series of questions and generates a GitHub Discussion draft with a fit score (**GREEN** / **YELLOW** / **RED**) and recommendations.
+
+**Manual fit check (no Claude Code):**
+
+Answer these questions and post them as a [GitHub Discussion](https://github.com/red-hat-data-services/agentic-starter-kits/discussions):
+
+1. **Framework**: Which agent framework? (See `agents/` for existing frameworks, or name a new one)
+2. **Type**: Template (reusable, general-purpose) or example (business use-case demo)?
+3. **RHOAI components**: Which platform components does it integrate with? (OGX/vLLM for inference, MLflow for tracing, Milvus for vector search, PostgreSQL for memory, MCP servers for tools)
+4. **Differentiation**: What does this agent teach that the existing agents don't?
+5. **API contract**: Will it expose `POST /chat/completions` (JSON + SSE streaming) and `GET /health`?
+6. **Container pattern**: Will it use UBI9, port 8080, non-root UID 1001?
+
+### Step 2: Wait for approval, then implement
+
+| Score | Meaning | Action |
+|-------|---------|--------|
+| **GREEN** | Sentence completes, standard components, no overlap, standard conformance | Proceed to implementation |
+| **YELLOW** | Sentence completes but has flags (non-standard components, partial overlap, new framework) | Wait for maintainer + PM feedback in the Discussion before writing code |
+| **RED** | Can't complete the sentence (deployment-only, no RHOAI integration) or exact duplicate | Needs rethinking or PM decision on scope |
+
+Link the approved Discussion in your PR description when you submit code.
+
+### Already opened a PR without a fit check?
+
+This is a fallback for PRs already in flight. Run the fit check against your agent directory — the skill auto-extracts details from your code:
+
+```text
+/agentic-starter-kits-skills:fit-check langgraph/templates/my_agent
+```
+
+Post the generated Discussion and add the link to your PR. Review is paused until the proposal Discussion is approved.
+
 ## Development setup
 
 This repository uses [pre-commit](https://pre-commit.com/) hooks to enforce code quality checks before each commit. Set it up once after cloning:
@@ -30,6 +81,15 @@ If you haven't run `pre-commit install --install-hooks`, hooks will **not** run 
 ```bash
 pre-commit run --all-files
 ```
+
+## Dependency management
+
+Every agent directory that has a `pyproject.toml` must also contain a committed `uv.lock` file so that builds are fully reproducible. When adding a new agent or modifying dependencies:
+
+1. **Use lower-bound pins** (e.g. `>=1.2.0`) in `pyproject.toml` to express minimum required versions. Avoid upper-bound caps in most cases — the lock file handles reproducibility. Upper bounds may be necessary when a dependency has known breaking changes or framework-imposed compatibility constraints.
+2. **Lock files are auto-updated** — the `uv-lock` pre-commit hook runs `uv lock` automatically when you modify a `pyproject.toml`. If the lock file changes, the hook will update it and fail the commit; simply re-commit to include the updated lock file.
+3. **Commit `uv.lock`** alongside `pyproject.toml` changes — never `.gitignore` it.
+4. CI enforces lock file consistency via `uv lock --check` in the Code Quality workflow.
 
 ## Pre-commit hooks
 
@@ -58,7 +118,7 @@ General-purpose checks from [pre-commit/pre-commit-hooks](https://github.com/pre
 | ---- | ------------ |
 | `trailing-whitespace` | Removes trailing whitespace from all files |
 | `end-of-file-fixer` | Ensures every file ends with a newline |
-| `check-yaml` | Validates YAML syntax (excludes `charts/` — Helm templates use Go syntax) |
+| `check-yaml` | Validates YAML syntax (excludes `agents/*/deployment/` — Helm templates use Go syntax) |
 | `check-json` | Validates JSON syntax |
 | `check-toml` | Validates TOML syntax |
 | `check-merge-conflict` | Detects leftover merge conflict markers |
@@ -68,6 +128,10 @@ General-purpose checks from [pre-commit/pre-commit-hooks](https://github.com/pre
 | `mixed-line-ending` | Ensures consistent line endings (no mixed LF/CRLF) |
 | `no-commit-to-branch` | Blocks direct commits to `main` |
 | `detect-private-key` | Catches accidentally committed private keys |
+
+### Lock file sync (uv-lock)
+
+Runs `uv lock` on any modified `pyproject.toml` and auto-updates the corresponding `uv.lock` if it's stale. The commit will fail with "files were modified by this hook" — simply re-commit to include the updated lock file.
 
 ### GitHub Actions workflow validation (actionlint)
 
@@ -81,7 +145,7 @@ Configuration files: [`ruff.toml`](ruff.toml) (Python rules), [`.markdownlint.js
 
 ## Commit message conventions
 
-This repository enforces the [Conventional Commits](https://www.conventionalcommits.org/) specification via a pre-commit hook. Commits that don't follow this format will be blocked locally by the pre-commit hook.
+This repository enforces the [Conventional Commits](https://www.conventionalcommits.org/) specification via a pre-commit hook. Commits that don't follow this format will be blocked locally by the pre-commit hook. All PRs are squash-merged, so the **PR title** becomes the commit message on `main` — make sure it follows Conventional Commits format.
 
 > **Tip:** To bypass the hook in rare cases (e.g., merge commits, emergency hotfixes): `git commit --no-verify`
 
@@ -154,7 +218,7 @@ Every pull request is automatically labeled when opened or updated:
 | `area/google-adk` | `agents/google/**` |
 | `area/a2a` | `agents/a2a/**` |
 | `area/vanilla-python` | `agents/vanilla_python/**` |
-| `area/helm` | `charts/**` |
+| `area/helm` | `agents/*/deployment/**` |
 | `area/docs` | `docs/**`, `*.md` (root) |
 | `area/ci` | `.github/**` |
 | `area/tests` | `tests/**`, `eval/**` |
@@ -188,9 +252,9 @@ This module exports `enable_tracing()` (and `wrap_func_with_mlflow_trace()` if y
 
 See existing examples:
 
-- Full autolog (no manual wrapping needed): `agents/langgraph/react_agent/src/react_agent/tracing.py`
-- Partial autolog (tools need manual wrapping): `agents/crewai/websearch_agent/src/crewai_web_search/tracing.py`
-- No framework autolog (tools + agent entry point need manual wrapping): `agents/vanilla_python/openai_responses_agent/src/openai_responses_agent/tracing.py`
+- Full autolog (no manual wrapping needed): `agents/langgraph/templates/react_agent/src/react_agent/tracing.py`
+- Partial autolog (tools need manual wrapping): `agents/crewai/templates/websearch_agent/src/crewai_web_search/tracing.py`
+- No framework autolog (tools + agent entry point need manual wrapping): `agents/vanilla_python/templates/openai_responses_agent/src/openai_responses_agent/tracing.py`
 
 **2. Edit `main.py`**
 
@@ -219,26 +283,26 @@ This allows `make run` to auto-install MLflow when `MLFLOW_TRACKING_URI` is set 
 
 ### Using the `integrate-tracing` Claude Code skill
 
-If you have [Claude Code](https://docs.anthropic.com/en/docs/claude-code) set up, this repo includes a skill that automates the entire process described above.
+If you have [Claude Code](https://docs.anthropic.com/en/docs/claude-code) set up, the [agentic-starter-kits-skills](https://github.com/red-hat-data-services/agentic-starter-kits-skills) plugin includes a skill that automates the entire process described above.
 
 #### Prerequisites
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and configured
-- Run Claude Code from the repo root so it discovers the skills in `.claude/skills/`
+- Install the [agentic-starter-kits-skills](https://github.com/red-hat-data-services/agentic-starter-kits-skills) plugin (see [Claude Code skills](#claude-code-skills))
 
 #### Running the full integration
 
 ```text
-/integrate-tracing <framework> <agent_path>
+/agentic-starter-kits-skills:integrate-tracing <framework> <agent_path>
 ```
 
 For example:
 
 ```text
-/integrate-tracing autogen agents/autogen/chat_agent
+/agentic-starter-kits-skills:integrate-tracing autogen agents/autogen/templates/mcp_agent
 ```
 
-You can also prompt Claude Code directly (e.g., "integrate tracing into the autogen chat agent using the `/integrate-tracing` skill") and it will follow the same workflow.
+You can also prompt Claude Code directly (e.g., "integrate tracing into the autogen MCP agent using the `/agentic-starter-kits-skills:integrate-tracing` skill") and it will follow the same workflow.
 
 This single command runs the entire pipeline end-to-end. The skill always creates a demo copy of the agent first, implements and verifies tracing on the demo, and only applies the changes to the actual agent template once everything works correctly.
 
@@ -257,13 +321,13 @@ This single command runs the entire pipeline end-to-end. The skill always create
 Each step of the pipeline is also available as a standalone skill. This is useful if you want to run just one phase, re-run a step after a fix, or integrate tracing manually with some automation:
 
 ```text
-/check-autolog-support <framework>         # Research MLflow autolog support for a framework
-/create-tracing-module <agent_path> [framework]  # Create tracing.py only
-/wire-into-lifespan <agent_path>            # Wire tracing into main.py only
-/add-manual-tracing <agent_path>            # Add manual trace wrapping only
-/verify-traces <agent_path>                 # Run code review + live trace testing
-/review-tracing-code <agent_path>           # Code review only (no live testing)
-/test-tracing <agent_path>                  # Live trace testing only (no code review)
+/agentic-starter-kits-skills:check-autolog-support <framework>         # Research MLflow autolog support for a framework
+/agentic-starter-kits-skills:create-tracing-module <agent_path> [framework]  # Create tracing.py only
+/agentic-starter-kits-skills:wire-into-lifespan <agent_path>            # Wire tracing into main.py only
+/agentic-starter-kits-skills:add-manual-tracing <agent_path>            # Add manual trace wrapping only
+/agentic-starter-kits-skills:verify-traces <agent_path>                 # Run code review + live trace testing
+/agentic-starter-kits-skills:review-tracing-code <agent_path>           # Code review only (no live testing)
+/agentic-starter-kits-skills:test-tracing <agent_path>                  # Live trace testing only (no code review)
 ```
 
 #### How the skill system works
@@ -272,9 +336,47 @@ Each step of the pipeline is also available as a standalone skill. This is usefu
 
 `verify-traces` is itself a sub-orchestrator — it calls `review-tracing-code` (static analysis) and `test-tracing` (live end-to-end testing) and combines their results into a single report. If verification fails, the report points back to which step to revisit.
 
-All skills live as siblings in `.claude/skills/` (not nested under `integrate-tracing/`) because Claude Code discovers skills by scanning `.claude/skills/*/SKILL.md`. The flat structure also makes each sub-skill independently callable. If you need to maintain or extend a skill, edit the `SKILL.md` file in its directory. Each skill includes a self-update instruction — if Claude deviates from a skill's steps because they were inaccurate, it updates the skill file automatically so the next run benefits.
+All contributor and operator skills live in the [agentic-starter-kits-skills](https://github.com/red-hat-data-services/agentic-starter-kits-skills) plugin repo as a flat set of siblings. The flat structure makes each sub-skill independently callable. If you need to maintain or extend a skill, edit the `SKILL.md` file in its directory in the plugin repo. Each skill includes a self-update instruction — if Claude deviates from a skill's steps because they were inaccurate, it updates the skill file automatically so the next run benefits. See [Claude Code skills](#claude-code-skills) for the full skill list.
 
 **Recommended model:** These skills were developed and tested with `claude-opus-4-6`. Use Opus for best results — smaller models may not follow the multi-step orchestration reliably.
+
+## Claude Code skills
+
+This project uses [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills to automate common contributor workflows. All contributor and operator skills live in the [agentic-starter-kits-skills](https://github.com/red-hat-data-services/agentic-starter-kits-skills) plugin repo.
+
+### Available skills
+
+| Skill | Description |
+|-------|-------------|
+| `integrate-tracing` | End-to-end MLflow tracing integration (see [Adding MLflow tracing](#adding-mlflow-tracing-to-your-agent-template)) |
+| `check-autolog-support` | Research MLflow autolog support for a framework |
+| `create-tracing-module` | Create `tracing.py` for an agent |
+| `wire-into-lifespan` | Wire tracing into the FastAPI lifespan |
+| `add-manual-tracing` | Add manual trace wrapping for tools and agent entry points |
+| `verify-traces` | Code review + live trace testing |
+| `review-tracing-code` | Static code review of tracing implementation |
+| `test-tracing` | Live end-to-end trace testing |
+| `kagenti-deploy` | Deploy A2A-compliant agents to OpenShift with kagenti integration |
+| `deploy-agents` | Deploy agents to OpenShift with auto-detected cluster config and MLflow token refresh |
+| `fit-check` | Validate whether a new agent belongs in the repo (idea mode or existing code) |
+| `add-behavioral-tests` | Scaffold behavioral testing (pytest + EvalHub) for an agent |
+| `run-behavioral-tests` | Run and validate behavioral tests for an agent |
+| `add-integration-tests` | Add integration tests for agent deployment verification |
+
+### Installation
+
+```bash
+claude plugin marketplace add red-hat-data-services/agentic-starter-kits-skills
+claude plugin install agentic-starter-kits-skills@agentic-starter-kits-skills
+```
+
+After installing, invoke skills with the `agentic-starter-kits-skills:` prefix (e.g. `/agentic-starter-kits-skills:deploy-agents`).
+
+### Adding a new skill
+
+Contributor and operator skills (test scaffolding, deployment, tracing integration, code generation) go in the [plugin repo](https://github.com/red-hat-data-services/agentic-starter-kits-skills). See its [Contributing section](https://github.com/red-hat-data-services/agentic-starter-kits-skills#contributing) for how to add one.
+
+End-user-facing skills — ones that help someone who cloned a starter kit customize or run an agent for their own use case — can go in this repo under `.claude/skills/` so they're available without installing the plugin. Create the directory when adding the first skill.
 
 ## Questions?
 
