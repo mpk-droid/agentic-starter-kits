@@ -27,11 +27,13 @@ def agent_name(agent_dir):
 
 @pytest.fixture(scope="module")
 def deployed_agent(cluster_auth, agent_name):  # noqa: F811
-    # Allow a direct URL override for pre-deployed agents whose route lives
-    # in a namespace the CI service account cannot read (e.g. langflow-agent).
-    override_url = os.environ.get("DEPLOYED_AGENT_URL", "").strip()
+    # Allow a direct URL override when the Langflow route lives in a namespace
+    # the CI service account cannot read (e.g. langflow-agent).
+    override_url = os.environ.get("LANGFLOW_AGENT_URL", "").strip()
     if override_url:
-        logger.info("Using DEPLOYED_AGENT_URL override: %s", override_url)
+        if not override_url.startswith("https://"):
+            pytest.fail(f"LANGFLOW_AGENT_URL must use https://: {override_url}")
+        logger.info("Using LANGFLOW_AGENT_URL override: %s", override_url)
         yield override_url
         return
 
