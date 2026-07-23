@@ -1,6 +1,6 @@
 # OpenCode — OpenShell Sandbox Deployment
 
-This directory contains an OpenShell-compatible Containerfile for running [OpenCode](https://github.com/sst/opencode) inside an OpenShell sandbox.
+This directory contains an OpenShell-compatible Containerfile for running [OpenCode](https://github.com/anomalyco/opencode) inside an OpenShell sandbox.
 
 ## Prerequisites
 

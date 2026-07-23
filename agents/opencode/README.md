@@ -126,4 +126,4 @@ agents/opencode/
 - [deployment/docs/mlflow-tracing-setup.md](deployment/docs/mlflow-tracing-setup.md) — MLflow tracing setup
 - [deployment/docs/mlflow-tracing.md](deployment/docs/mlflow-tracing.md) — tracing schema, backend comparisons, latency benchmarks
 - [opendatahub-io/opencode](https://github.com/opendatahub-io/opencode) — container image source and CI
-- [OpenCode upstream](https://github.com/sst/opencode) — upstream project
+- [OpenCode upstream](https://github.com/anomalyco/opencode) — upstream project
