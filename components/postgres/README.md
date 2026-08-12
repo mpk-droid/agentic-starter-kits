@@ -11,6 +11,11 @@ Designed for agents that need persistent database storage (e.g., `react_with_dat
 - **Secret** — database credentials (user, password, database name)
 - **PersistentVolumeClaim** — data persistence across pod restarts (1 Gi default)
 
+> **Scope:** This chart is intended for development and testing workloads. It runs a single
+> replica with no replication, failover, connection pooling, or performance tuning. For
+> production use, consider [Bitnami PostgreSQL](https://github.com/bitnami/charts/tree/main/bitnami/postgresql),
+> [CloudNativePG](https://cloudnative-pg.io/), or a managed PostgreSQL service.
+
 ## Quick Start
 
 ```bash
@@ -66,7 +71,7 @@ For cross-namespace access, use the fully qualified service DNS:
 | Value                    | Description                          | Default                                     |
 |--------------------------|--------------------------------------|---------------------------------------------|
 | `image.repository`       | PostgreSQL container image           | `registry.redhat.io/rhel9/postgresql-16`    |
-| `image.tag`              | Image tag                            | `latest`                                    |
+| `image.tag`              | Image tag                            | `1-1786484397`                              |
 | `auth.username`          | Database user                        | `agent`                                     |
 | `auth.password`          | Database password (**required**)     | `""`                                        |
 | `auth.database`          | Database name                        | `agent_memory`                              |
