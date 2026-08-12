@@ -243,11 +243,11 @@ The agent needs a PostgreSQL database accessible from the cluster. Choose one of
 
 #### Option A: Deploy PostgreSQL using the provided Helm chart
 
-A reusable PostgreSQL chart is available at [`components/postgres/`](../../../../components/postgres/).
+A reusable PostgreSQL chart is available at [`components/postgresql/`](../../../../components/postgresql/).
 
 ```bash
 # From the repository root
-helm install postgresql components/postgres/ \
+helm install postgresql components/postgresql/ \
   --set auth.password=<your-password>
 ```
 
@@ -262,7 +262,7 @@ POSTGRES_USER=agent
 POSTGRES_PASSWORD=<your-password>
 ```
 
-See the [component README](../../../../components/postgres/README.md) for full configuration
+See the [component README](../../../../components/postgresql/README.md) for full configuration
 options (storage size, custom StorageClass, resource limits, etc.).
 
 #### Option B: Use an existing PostgreSQL instance

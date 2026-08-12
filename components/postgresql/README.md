@@ -1,4 +1,4 @@
-# `components/postgres` — PostgreSQL for Agent Memory
+# `components/postgresql` — PostgreSQL for Agent Memory
 
 A lightweight Helm chart that deploys a single-replica PostgreSQL instance on OpenShift/Kubernetes.
 Designed for agents that need persistent database storage (e.g., `react_with_database_memory`,
@@ -20,7 +20,7 @@ Designed for agents that need persistent database storage (e.g., `react_with_dat
 
 ```bash
 # From the repository root
-helm install postgresql components/postgres/ \
+helm install postgresql components/postgresql/ \
   --set auth.password=changeme
 ```
 
@@ -87,7 +87,7 @@ For cross-namespace access, use the fully qualified service DNS:
 ## Preview Manifests
 
 ```bash
-helm template postgresql components/postgres/ \
+helm template postgresql components/postgresql/ \
   --set auth.password=changeme
 ```
 
