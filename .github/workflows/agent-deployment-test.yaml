@@ -91,26 +91,35 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Setup cluster tools
+        uses: ./.github/actions/setup-cluster
+        with:
+          oc-token: ${{ secrets.OC_TOKEN }}
+          cluster-api-url: ${{ secrets.CLUSTER_API_URL }}
+
       - name: Run QG4 deployment test
         if: matrix.agent.name != 'autogen-mcp-agent' || vars.MCP_SERVER_URL != ''
         uses: ./.github/actions/run-qg4
         with:
           agent-name: ${{ matrix.agent.name }}
           agent-dir: ${{ matrix.agent.dir }}
-          oc-token: ${{ secrets.OC_TOKEN }}
-          cluster-api-url: ${{ secrets.CLUSTER_API_URL }}
-          api-key: ${{ matrix.agent.name == 'vanilla-python-openai-responses-agent' && secrets.OPENAI_API_KEY || vars.API_KEY }}
-          base-url: ${{ matrix.BASE_URL || vars.BASE_URL }}
-          model-id: ${{ matrix.MODEL_ID || vars.MODEL_ID }}
-          postgres-host: ${{ matrix.POSTGRES_HOST }}
-          postgres-port: ${{ matrix.POSTGRES_PORT }}
-          postgres-db: ${{ matrix.POSTGRES_DB }}
-          postgres-user: ${{ matrix.POSTGRES_USER }}
-          postgres-password: ${{ secrets.POSTGRES_PASSWORD }}
-          mcp-server-url: ${{ matrix.MCP_SERVER_URL }}
-          langflow-agent-url: ${{ matrix.LANGFLOW_AGENT_URL }}
-          nvidia-api-key: ${{ secrets.NVIDIA_API_KEY }}
-          guardrails-model-id: ${{ matrix.GUARDRAILS_MODEL_ID }}
+        env:
+          API_KEY: ${{ matrix.agent.name == 'vanilla-python-openai-responses-agent' && secrets.OPENAI_API_KEY || vars.API_KEY }}
+          BASE_URL: ${{ matrix.BASE_URL || vars.BASE_URL }}
+          MODEL_ID: ${{ matrix.MODEL_ID || vars.MODEL_ID }}
+          POSTGRES_HOST: ${{ matrix.POSTGRES_HOST }}
+          POSTGRES_PORT: ${{ matrix.POSTGRES_PORT }}
+          POSTGRES_DB: ${{ matrix.POSTGRES_DB }}
+          POSTGRES_USER: ${{ matrix.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          MCP_SERVER_URL: ${{ matrix.MCP_SERVER_URL }}
+          LANGFLOW_AGENT_URL: ${{ matrix.LANGFLOW_AGENT_URL }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          GUARDRAILS_MODEL_ID: ${{ matrix.GUARDRAILS_MODEL_ID }}
+
+      - name: Logout
+        if: always()
+        run: oc logout || true
 
   notify-slack:
     name: Notify Slack

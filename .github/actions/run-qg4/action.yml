@@ -1,5 +1,5 @@
 name: "Run QG4 Agent Deployment Test"
-description: "Deploy an agent to OpenShift, run its integration test suite, and upload results."
+description: "Run an agent's integration test suite and upload results. Caller handles checkout, setup-cluster, and logout."
 
 inputs:
   agent-name:
@@ -8,86 +8,13 @@ inputs:
   agent-dir:
     description: "Path to the agent directory (relative to repo root)"
     required: true
-  oc-token:
-    description: "OpenShift service account token"
-    required: true
-  cluster-api-url:
-    description: "OpenShift cluster API URL"
-    required: true
-  api-key:
-    description: "LLM API key"
-    required: false
-    default: ""
-  base-url:
-    description: "LLM base URL"
-    required: false
-    default: ""
-  model-id:
-    description: "LLM model ID"
-    required: false
-    default: ""
-  postgres-host:
-    description: "PostgreSQL host"
-    required: false
-    default: ""
-  postgres-port:
-    description: "PostgreSQL port"
-    required: false
-    default: ""
-  postgres-db:
-    description: "PostgreSQL database name"
-    required: false
-    default: ""
-  postgres-user:
-    description: "PostgreSQL user"
-    required: false
-    default: ""
-  postgres-password:
-    description: "PostgreSQL password"
-    required: false
-    default: ""
-  mcp-server-url:
-    description: "MCP server URL (autogen agent)"
-    required: false
-    default: ""
-  langflow-agent-url:
-    description: "Langflow agent URL"
-    required: false
-    default: ""
-  nvidia-api-key:
-    description: "NVIDIA API key (guardrails)"
-    required: false
-    default: ""
-  guardrails-model-id:
-    description: "Guardrails model ID"
-    required: false
-    default: ""
 
 runs:
   using: "composite"
   steps:
-    - name: Setup cluster tools
-      uses: ./.github/actions/setup-cluster
-      with:
-        oc-token: ${{ inputs.oc-token }}
-        cluster-api-url: ${{ inputs.cluster-api-url }}
-
     - name: Run integration test
       shell: bash
       working-directory: ${{ inputs.agent-dir }}
-      env:
-        API_KEY: ${{ inputs.api-key }}
-        BASE_URL: ${{ inputs.base-url }}
-        MODEL_ID: ${{ inputs.model-id }}
-        POSTGRES_HOST: ${{ inputs.postgres-host }}
-        POSTGRES_PORT: ${{ inputs.postgres-port }}
-        POSTGRES_DB: ${{ inputs.postgres-db }}
-        POSTGRES_USER: ${{ inputs.postgres-user }}
-        POSTGRES_PASSWORD: ${{ inputs.postgres-password }}
-        MCP_SERVER_URL: ${{ inputs.mcp-server-url }}
-        LANGFLOW_AGENT_URL: ${{ inputs.langflow-agent-url }}
-        NVIDIA_API_KEY: ${{ inputs.nvidia-api-key }}
-        GUARDRAILS_MODEL_ID: ${{ inputs.guardrails-model-id }}
       run: make test-integration
 
     - name: Upload test results
@@ -96,8 +23,4 @@ runs:
       with:
         name: ${{ inputs.agent-name }}-results
         path: ${{ inputs.agent-dir }}/results.xml
-
-    - name: Logout
-      if: always()
-      shell: bash
-      run: oc logout || true
+        if-no-files-found: warn
