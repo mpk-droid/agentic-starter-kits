@@ -1,10 +1,7 @@
 name: "Run QG4 Agent Deployment Test"
-description: "Run an agent's integration test suite and upload results. Caller handles checkout, setup-cluster, and logout."
+description: "Run an agent's integration test suite. Caller handles checkout, setup-cluster, artifact upload, and logout."
 
 inputs:
-  agent-name:
-    description: "Agent display name (used for artifact naming)"
-    required: true
   agent-dir:
     description: "Path to the agent directory (relative to repo root)"
     required: true
@@ -16,11 +13,3 @@ runs:
       shell: bash
       working-directory: ${{ inputs.agent-dir }}
       run: make test-integration
-
-    - name: Upload test results
-      if: always()
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-      with:
-        name: ${{ inputs.agent-name }}-results
-        path: ${{ inputs.agent-dir }}/results.xml
-        if-no-files-found: warn
