@@ -1,29 +1,34 @@
-name: "QG1: Cluster Readiness"
+name: "QG2: Platform Readiness"
 
 on:
   schedule:
-    - cron: "0 1 * * *"
+    - cron: "15 1 * * *"
   workflow_dispatch:
     inputs:
       cluster_profile:
         description: "Logical cluster profile name"
         type: string
         default: "rhoai2"
-      require_gpu:
-        description: "Whether GPU nodes are required"
+      cluster_type:
+        description: "Platform flavor"
+        type: choice
+        options: [odh, rhoai]
+        default: rhoai
+      require_dsc_ready:
+        description: "Whether DataScienceCluster must be Ready"
         type: boolean
         default: true
-      required_namespaces:
-        description: "Comma-separated namespaces that must exist"
-        type: string
-        default: "ci-testing"
+      require_kserve:
+        description: "Whether KServe controller health is required"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 jobs:
-  qg1:
-    name: "QG1 Cluster Readiness"
+  qg2:
+    name: "QG2 Platform Readiness"
     if: github.repository == 'red-hat-data-services/agentic-starter-kits'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -37,42 +42,42 @@ jobs:
           oc-token: ${{ secrets.OC_TOKEN }}
           cluster-api-url: ${{ secrets.CLUSTER_API_URL }}
 
-      # Bootstrap with the shared ci-testing service account, then mint a
-      # short-lived token for the dedicated QG1 identity before cluster-scope
-      # readiness checks run.
-      - name: Assume dedicated QG1 service account
-        uses: ./.github/actions/assume-service-account
-
-      - name: Resolve QG1 inputs
+      - name: Resolve QG2 inputs
         id: resolve
         env:
           EVENT_NAME: ${{ github.event_name }}
-          DISPATCH_REQUIRE_GPU: ${{ inputs.require_gpu }}
-          VARS_REQUIRE_GPU: ${{ vars.QG1_REQUIRE_GPU }}
+          DISPATCH_REQUIRE_DSC_READY: ${{ inputs.require_dsc_ready }}
+          DISPATCH_REQUIRE_KSERVE: ${{ inputs.require_kserve }}
+          VARS_REQUIRE_DSC_READY: ${{ vars.QG2_REQUIRE_DSC_READY }}
+          VARS_REQUIRE_KSERVE: ${{ vars.QG2_REQUIRE_KSERVE }}
         run: |
           set -euo pipefail
           if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
-            require_gpu="${DISPATCH_REQUIRE_GPU}"
+            require_dsc_ready="${DISPATCH_REQUIRE_DSC_READY}"
+            require_kserve="${DISPATCH_REQUIRE_KSERVE}"
           else
-            require_gpu="${VARS_REQUIRE_GPU:-true}"
+            require_dsc_ready="${VARS_REQUIRE_DSC_READY:-true}"
+            require_kserve="${VARS_REQUIRE_KSERVE:-true}"
           fi
-          echo "require-gpu=${require_gpu}" >> "${GITHUB_OUTPUT}"
+          echo "require-dsc-ready=${require_dsc_ready}" >> "${GITHUB_OUTPUT}"
+          echo "require-kserve=${require_kserve}" >> "${GITHUB_OUTPUT}"
 
-      - name: Run QG1
-        uses: ./.github/actions/run-qg1
+      - name: Run QG2
+        uses: ./.github/actions/run-qg2
         with:
-          cluster-profile: ${{ inputs.cluster_profile || vars.QG1_CLUSTER_PROFILE || 'rhoai2' }}
-          require-gpu: ${{ steps.resolve.outputs.require-gpu }}
-          required-namespaces: ${{ inputs.required_namespaces || vars.QG1_REQUIRED_NAMESPACES || 'ci-testing' }}
-          summary-json-path: qg1-results/summary.json
-          summary-md-path: qg1-results/summary.md
+          cluster-profile: ${{ inputs.cluster_profile || vars.QG2_CLUSTER_PROFILE || 'rhoai2' }}
+          cluster-type: ${{ inputs.cluster_type || vars.QG2_CLUSTER_TYPE || 'rhoai' }}
+          require-dsc-ready: ${{ steps.resolve.outputs.require-dsc-ready }}
+          require-kserve: ${{ steps.resolve.outputs.require-kserve }}
+          summary-json-path: qg2-results/summary.json
+          summary-md-path: qg2-results/summary.md
 
-      - name: Upload QG1 results
+      - name: Upload QG2 results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: qg1-results
-          path: qg1-results/**
+          name: qg2-results
+          path: qg2-results/**
           if-no-files-found: warn
 
       - name: Logout
@@ -85,7 +90,7 @@ jobs:
       !cancelled() &&
       github.repository == 'red-hat-data-services/agentic-starter-kits' &&
       (github.event_name != 'workflow_dispatch' || github.ref_name == 'main')
-    needs: [qg1]
+    needs: [qg2]
     runs-on: ubuntu-latest
     permissions:
       contents: read
