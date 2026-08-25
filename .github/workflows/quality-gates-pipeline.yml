@@ -41,18 +41,7 @@ jobs:
           cluster-api-url: ${{ secrets.CLUSTER_API_URL }}
 
       - name: Verify cluster connection
-        run: |
-          set -o pipefail
-          echo "--- Logged in as ---"
-          oc whoami
-          echo ""
-          echo "--- Current project ---"
-          oc project
-          echo ""
-          echo "--- Namespace resources ---"
-          oc get all -n ci-testing --no-headers 2>&1 | head -10 || true
-          echo ""
-          echo "Cluster connection verified successfully."
+        uses: ./.github/actions/verify-cluster-connection
 
       - name: Logout
         if: always()
@@ -68,6 +57,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # ⚠️  Keep in sync with agent-deployment-test.yaml matrix
         agent:
           - { name: langgraph-react-agent, dir: agents/langgraph/templates/react_agent }
           - { name: langgraph-hitl-agent, dir: agents/langgraph/templates/human_in_the_loop }
@@ -108,7 +98,8 @@ jobs:
           cluster-api-url: ${{ secrets.CLUSTER_API_URL }}
 
       - name: Run QG4 deployment test
-        if: matrix.agent.name != 'autogen-mcp-agent' || vars.MCP_SERVER_URL != ''
+        id: qg4_test
+        if: matrix.agent.name != 'autogen-mcp-agent' || vars.MCP_SERVER_URL
         uses: ./.github/actions/run-qg4
         with:
           agent-dir: ${{ matrix.agent.dir }}
@@ -141,13 +132,18 @@ jobs:
           AGENT_NAME: ${{ matrix.agent.name }}
           AGENT_DIR: ${{ matrix.agent.dir }}
           JOB_STATUS: ${{ job.status }}
+          QG4_TEST_OUTCOME: ${{ steps.qg4_test.outcome }}
         run: |
           set -euo pipefail
+          status="${JOB_STATUS}"
+          if [[ "${QG4_TEST_OUTCOME}" == "skipped" ]]; then
+            status="skipped"
+          fi
           mkdir -p qg4-outcome
           jq -n \
             --arg name "${AGENT_NAME}" \
             --arg dir "${AGENT_DIR}" \
-            --arg status "${JOB_STATUS}" \
+            --arg status "${status}" \
             '{name: $name, dir: $dir, status: $status}' \
             > qg4-outcome/result.json
 
@@ -181,29 +177,23 @@ jobs:
 
       - name: Build pass-list from QG4 outcomes
         id: filter
+        shell: bash
         run: |
           set -euo pipefail
+          shopt -s nullglob
 
-          pass_list='[]'
-          fail_list='[]'
+          result_files=(qg4-outcomes/qg4-outcome-*/result.json)
+          if [[ ${#result_files[@]} -eq 0 ]]; then
+            echo "No QG4 outcome artifacts found (upstream jobs may have been skipped)."
+            echo "pass_list=[]" >> "${GITHUB_OUTPUT}"
+            echo "has_passing=false" >> "${GITHUB_OUTPUT}"
+            echo "## QG4 Results" >> "${GITHUB_STEP_SUMMARY}"
+            echo "No outcome artifacts — QG4 jobs did not run." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
 
-          for result_file in qg4-outcomes/qg4-outcome-*/result.json; do
-            name=$(jq -r '.name' "${result_file}")
-            dir=$(jq -r '.dir' "${result_file}")
-            status=$(jq -r '.status' "${result_file}")
-
-            # Strip agents/ prefix to get the QG7-compatible template-layout ID
-            qg7_id="${dir#agents/}"
-
-            entry=$(jq -n --arg name "${name}" --arg qg7_id "${qg7_id}" \
-              '{name: $name, qg7_id: $qg7_id}')
-
-            if [[ "${status}" == "success" ]]; then
-              pass_list=$(echo "${pass_list}" | jq --argjson entry "${entry}" '. + [$entry]')
-            else
-              fail_list=$(echo "${fail_list}" | jq --arg name "${name}" '. + [$name]')
-            fi
-          done
+          pass_list=$(jq -s '[.[] | select(.status == "success") | {name: .name, qg7_id: (.dir | ltrimstr("agents/"))}]' "${result_files[@]}")
+          fail_list=$(jq -s '[.[] | select(.status != "success") | .name]' "${result_files[@]}")
 
           pass_count=$(echo "${pass_list}" | jq 'length')
           fail_count=$(echo "${fail_list}" | jq 'length')
@@ -249,6 +239,13 @@ jobs:
         with:
           oc-token: ${{ secrets.OC_TOKEN }}
           cluster-api-url: ${{ secrets.CLUSTER_API_URL }}
+
+      - name: Cache uv packages
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
 
       - name: Install btest runner dependencies
         run: |
