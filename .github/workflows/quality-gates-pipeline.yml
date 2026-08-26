@@ -33,6 +33,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup cluster tools
         uses: ./.github/actions/setup-cluster
@@ -90,6 +92,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup cluster tools
         uses: ./.github/actions/setup-cluster
@@ -170,6 +174,7 @@ jobs:
       has_passing: ${{ steps.filter.outputs.has_passing }}
     steps:
       - name: Download QG4 outcome artifacts
+        continue-on-error: true
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           pattern: qg4-outcome-*
@@ -222,6 +227,7 @@ jobs:
     needs: collect-qg4
     if: >-
       always() &&
+      github.repository == 'red-hat-data-services/agentic-starter-kits' &&
       needs.collect-qg4.result == 'success' &&
       needs.collect-qg4.outputs.has_passing == 'true'
     runs-on: ubuntu-latest
@@ -233,6 +239,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup cluster tools
         uses: ./.github/actions/setup-cluster
