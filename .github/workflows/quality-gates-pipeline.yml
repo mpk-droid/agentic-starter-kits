@@ -232,6 +232,34 @@ jobs:
       needs.collect-qg4.outputs.has_passing == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # QG7 deploys and tears down its own agents (run-qg7 action handles
+    # the full lifecycle). These env vars are consumed by the deploy step
+    # to write each agent's .env from its agent.yaml `env` block.
+    # Keep in sync with eval-gating.yml cluster-btests job env.
+    #
+    # NVIDIA_API_KEY / GUARDRAILS_MODEL_ID deliberately omitted:
+    # guardrailed_agent is excluded (RHAIENG-7081).
+    env:
+      API_KEY: ${{ vars.API_KEY }}
+      BASE_URL: ${{ vars.BASE_URL }}
+      MODEL_ID: ${{ vars.MODEL_ID }}
+      MLFLOW_TRACKING_URI: ${{ vars.MLFLOW_TRACKING_URI }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+      OPENAI_MODEL_ID: ${{ vars.OPENAI_MODEL_ID }}
+      POSTGRES_HOST: ${{ vars.POSTGRES_HOST }}
+      POSTGRES_PORT: ${{ vars.POSTGRES_PORT }}
+      POSTGRES_DB: ${{ vars.POSTGRES_DB }}
+      POSTGRES_USER: ${{ vars.POSTGRES_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      MCP_SERVER_URL: ${{ vars.MCP_SERVER_URL }}
+      LANGFLOW_AGENT_URL: ${{ vars.LANGFLOW_AGENT_URL }}
+      OGX_BASE_URL: ${{ vars.OGX_BASE_URL }}
+      OGX_MODEL_ID: ${{ vars.OGX_MODEL_ID }}
+      EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL }}
+      EMBEDDING_DIMENSION: ${{ vars.EMBEDDING_DIMENSION }}
+      VECTOR_STORE_PROVIDER: ${{ vars.VECTOR_STORE_PROVIDER }}
+      VECTOR_STORE_ID: ${{ vars.VECTOR_STORE_ID }}
     strategy:
       fail-fast: false
       matrix:
