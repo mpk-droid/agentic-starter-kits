@@ -12,6 +12,7 @@
 #                       └─► notify-slack
 #
 # Ref: RFC Discussion #285
+# Depends on: .github/actions/run-qg4, .github/actions/run-qg7
 
 name: "Quality Gates Pipeline"
 
