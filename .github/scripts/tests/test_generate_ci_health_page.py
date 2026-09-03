@@ -24,7 +24,7 @@ FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "ci-runs-sample.
 
 def test_fixture_loads_all_workflows():
     summaries = summaries_from_fixture(FIXTURE)
-    assert len(summaries) == 6
+    assert len(summaries) == 7
     assert summaries[0].display_name == "Code Quality"
     assert summaries[0].latest is not None
     assert summaries[0].latest.conclusion == "success"
@@ -51,7 +51,7 @@ def test_qg1_fixture_entry_is_included():
 def test_qg4_latest_failure_is_surfaced():
     summaries = summaries_from_fixture(FIXTURE)
     qg4 = next(
-        item for item in summaries if item.workflow_file == "agent-deployment-test.yaml"
+        item for item in summaries if item.workflow_file == "quality-gates-pipeline.yml"
     )
     assert qg4.latest is not None
     assert qg4.latest.conclusion == "failure"
@@ -112,7 +112,7 @@ def test_workflow_dispatch_on_feature_branch_is_ignored():
 def test_schedule_run_is_always_relevant():
     run = WorkflowRun(
         id=4,
-        name="QG4: Agent Deployment Integration Tests",
+        name="Quality Gates Pipeline",
         event="schedule",
         head_branch="",
         status="completed",
@@ -158,7 +158,7 @@ def test_summaries_from_api_continues_after_workflow_failure(monkeypatch):
     summaries = summaries_from_api(
         "red-hat-data-services/agentic-starter-kits", "token"
     )
-    assert len(summaries) == 6
+    assert len(summaries) == 7
     gating = next(item for item in summaries if item.workflow_file == "eval-gating.yml")
     assert gating.error_message is not None
     assert "404" in gating.error_message
@@ -170,6 +170,6 @@ def test_main_writes_html(tmp_path):
     assert main(["--input", str(FIXTURE), "--output", str(output)]) == 0
     content = output.read_text(encoding="utf-8")
     assert "agentic-starter-kits CI Health" in content
-    assert "QG4: Agent Deployment Integration Tests" in content
+    assert "Quality Gates Pipeline" in content
     assert "QG1: Cluster Readiness" in content
     assert "QG2: Platform Readiness" in content
