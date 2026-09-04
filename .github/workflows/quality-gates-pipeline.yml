@@ -47,6 +47,8 @@ jobs:
 
       - name: Assume dedicated QG1 service account
         uses: ./.github/actions/assume-service-account
+        with:
+          service-account: qg1-readiness
 
       - name: Run QG1
         uses: ./.github/actions/run-qg1
@@ -72,8 +74,12 @@ jobs:
   # ── Stage 0b: QG2 — Platform readiness ─────────────────────────────────
   qg2:
     name: "QG2: Platform Readiness"
+    # QG2 runs sequentially after QG1 and only if QG1 succeeds: platform
+    # readiness checks assume a reachable, GPU/namespace-verified cluster.
+    # verify-cluster-connection additionally requires both qg1 and qg2 to
+    # succeed before QG4/QG7 are allowed to run.
     needs: qg1
-    if: always() && github.repository == 'red-hat-data-services/agentic-starter-kits'
+    if: needs.qg1.result == 'success' && github.repository == 'red-hat-data-services/agentic-starter-kits'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
