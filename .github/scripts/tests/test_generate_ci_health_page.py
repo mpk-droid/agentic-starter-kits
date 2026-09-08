@@ -5,14 +5,14 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import yaml
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from generate_ci_health_page import (  # noqa: E402
     WORKFLOWS,
+    WORKFLOWS_DIR,
     WorkflowRun,
     compute_pass_rate,
     is_relevant_run,
+    load_workflow_yaml,
     main,
     render_workflow_card,
     summaries_from_api,
@@ -68,10 +68,7 @@ def test_qg4_manual_dispatch_entry_is_included():
         item for item in summaries if item.workflow_file == "agent-deployment-test.yaml"
     )
     assert qg4.display_name == "QG4: Agent Deployment Integration Tests"
-    assert (
-        qg4.description
-        == "Manual (workflow_dispatch-only) QG4 deploy/health check run."
-    )
+    assert qg4.description.startswith("Ad hoc, manual-only QG4")
     assert qg4.latest is not None
     assert qg4.latest.conclusion == "success"
 
@@ -195,10 +192,18 @@ def test_main_writes_html(tmp_path):
     assert "QG2: Platform Readiness" in content
 
 
-def test_workflow_names_match_ci_health_pages_trigger_list():
-    workflow_doc = yaml.safe_load(CI_HEALTH_PAGES_WORKFLOW.read_text(encoding="utf-8"))
-    triggered_names = set(workflow_doc[True]["workflow_run"]["workflows"])
-    tracked_names = {workflow["name"] for workflow in WORKFLOWS}
+def test_workflow_catalog_names_match_their_source_files_and_trigger_list():
+    trigger_doc = load_workflow_yaml(CI_HEALTH_PAGES_WORKFLOW)
+    triggered_names = set(trigger_doc["on"]["workflow_run"]["workflows"])
+
+    for entry in WORKFLOWS:
+        actual_name = load_workflow_yaml(WORKFLOWS_DIR / entry["file"]).get("name")
+        assert entry["name"] == actual_name, (
+            f"{entry['file']}: catalog name {entry['name']!r} does not match "
+            f"the workflow file's own name: {actual_name!r}"
+        )
+
+    tracked_names = {entry["name"] for entry in WORKFLOWS}
     assert tracked_names == triggered_names, (
         "WORKFLOWS in generate_ci_health_page.py must match the workflow_run "
         "trigger list in ci-health-pages.yml, or the dashboard will silently "

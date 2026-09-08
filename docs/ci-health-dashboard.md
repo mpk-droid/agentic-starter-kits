@@ -16,10 +16,12 @@ The dashboard covers these workflows on `main` and scheduled or manual shared-br
 | `quality-gates-pipeline.yml` | Quality Gates Pipeline |
 | `agent-deployment-test.yaml` | QG4: Agent Deployment Integration Tests |
 
-`agent-deployment-test.yaml` is `workflow_dispatch`-only (nightly QG4 now runs inside
-`Quality Gates Pipeline`) — expect its card to show "No completed runs" between ad hoc
-manual runs. That's expected, not a recurrence of the staleness bug this dashboard
-previously had.
+`agent-deployment-test.yaml` is an **ad hoc, manual-only** QG4 check, not the
+nightly QG4 signal — nightly QG4 (and QG7) runs inside `Quality Gates
+Pipeline`. Between manual dispatches, expect its card to read "No recent runs
+on `main` or scheduled triggers." (latest run) and "No completed runs in the
+last 7 days" (7-day health). That's expected, not a recurrence of the
+staleness bug this dashboard previously had.
 
 Pull request runs are excluded from the summary to keep the page focused on shared-branch health.
 
