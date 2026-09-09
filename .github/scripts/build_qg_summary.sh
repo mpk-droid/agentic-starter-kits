@@ -21,7 +21,12 @@ QG4_RESULT="${QG4_RESULT:?QG4_RESULT is required}"
 QG7_RESULT="${QG7_RESULT:?QG7_RESULT is required}"
 QG4_OUTCOMES_DIR="${QG4_OUTCOMES_DIR:-qg4-outcomes}"
 QG7_OUTCOMES_DIR="${QG7_OUTCOMES_DIR:-qg7-outcomes}"
-MAX_AGENT_ROWS="${MAX_AGENT_ROWS:-40}"
+# Slack section blocks cap text at 3000 characters; this is the budget for
+# the *entire* summary_text (gate summary + agent table together), since
+# both land in one section block. Row count alone can't bound this — agent
+# name length varies — so the table is truncated by character budget, not a
+# fixed row count.
+TOTAL_CHAR_BUDGET="${TOTAL_CHAR_BUDGET:-2900}"
 
 # Agents that pass QG4 but are intentionally excluded from QG7 behavioral
 # evals. Set via the QG7_EXCLUDED_AGENTS_JSON workflow-level env var in
@@ -130,8 +135,8 @@ filter_valid_json() {
 # because this function is invoked inside a `$(...)` subshell, so any
 # variables it sets wouldn't be visible back in the caller's scope.
 build_agent_table() {
-  local qg7_json="$1"
-  shift
+  local qg7_json="$1" char_budget="$2"
+  shift 2
   local -a qg4_files=("$@")
 
   local rows
@@ -161,24 +166,48 @@ build_agent_table() {
   local total_count
   total_count="$(jq 'length' <<<"${rows}")"
 
-  local table_body
-  table_body="$(
-    while IFS=$'\t' read -r name qg4_status qg7_status; do
-      qg4_sym="$(agent_status_icon "${qg4_status}")"
-      qg7_sym="$(agent_status_icon "${qg7_status}")"
-      note="$(agent_status_note "${qg7_status}")"
-      printf '%-34s %-2s   %-2s   %s\n' "${name}" "${qg4_sym}" "${qg7_sym}" "${note}"
-    done < <(jq -r --argjson limit "${MAX_AGENT_ROWS}" '.[:$limit] | .[] | [.name, .qg4, .qg7] | @tsv' <<<"${rows}")
-  )"
+  local header
+  header="$(printf '%-34s %-4s %-4s' "agent" "qg4" "qg7")"
+  # Fixed overhead around the table: "*Agent Results*\n```\n" + header line +
+  # "\n" + closing "```", plus a little slack for the header line itself.
+  local chrome_len=$(( ${#header} + 32 ))
 
-  if [[ "${total_count}" -gt "${MAX_AGENT_ROWS}" ]]; then
+  local -a row_lines=()
+  while IFS=$'\t' read -r name qg4_status qg7_status; do
+    qg4_sym="$(agent_status_icon "${qg4_status}")"
+    qg7_sym="$(agent_status_icon "${qg7_status}")"
+    note="$(agent_status_note "${qg7_status}")"
+    row_lines+=("$(printf '%-34s %-2s   %-2s   %s' "${name}" "${qg4_sym}" "${qg7_sym}" "${note}")")
+  done < <(jq -r '.[] | [.name, .qg4, .qg7] | @tsv' <<<"${rows}")
+
+  # Reserve room for the truncation trailer up front so it's never the thing
+  # that pushes the block over budget.
+  local trailer_reserve=70
+  local shown=0
+  local running_len=${chrome_len}
+  local -a included=()
+  local line line_len
+  for line in "${row_lines[@]+"${row_lines[@]}"}"; do
+    line_len=$(( ${#line} + 1 ))
+    if (( running_len + line_len + trailer_reserve > char_budget )); then
+      break
+    fi
+    included+=("${line}")
+    running_len=$(( running_len + line_len ))
+    shown=$(( shown + 1 ))
+  done
+
+  local table_body=""
+  if [[ ${#included[@]} -gt 0 ]]; then
+    table_body="$(printf '%s\n' "${included[@]}")"
+  fi
+  if (( shown < total_count )); then
     table_body="${table_body}
-... and $((total_count - MAX_AGENT_ROWS)) more agent(s), see workflow run for the full matrix"
+... and $((total_count - shown)) more agent(s), see workflow run for the full matrix"
   fi
 
   # shellcheck disable=SC2016 # backticks here are a literal Slack code-fence, not command substitution
-  printf '*Agent Results*\n```\n%-34s %-4s %-4s\n%s\n```' \
-    "agent" "qg4" "qg7" "${table_body}"
+  printf '*Agent Results*\n```\n%s\n%s\n```' "${header}" "${table_body}"
 }
 
 shopt -s nullglob
@@ -206,23 +235,29 @@ if [[ ${#valid_qg7_files[@]} -gt 0 ]]; then
   qg7_json="$(jq -s '[.[] | {(.name): .status}] | add // {}' "${valid_qg7_files[@]}" 2>/dev/null)" || qg7_json='{}'
 fi
 
+warnings=()
+[[ "${invalid_qg4_count}" -gt 0 ]] && warnings+=("⚠️ ${invalid_qg4_count} QG4 outcome file(s) could not be parsed and were excluded")
+[[ "${invalid_qg7_count}" -gt 0 ]] && warnings+=("⚠️ ${invalid_qg7_count} QG7 outcome file(s) could not be parsed and were excluded")
+warnings_text=""
+for warning in "${warnings[@]+"${warnings[@]}"}"; do
+  warnings_text="${warnings_text}
+${warning}"
+done
+
 agent_table=""
 if [[ ${#all_qg4_files[@]} -gt 0 ]]; then
   if [[ ${#valid_qg4_files[@]} -gt 0 ]]; then
-    if ! agent_table="$(build_agent_table "${qg7_json}" "${valid_qg4_files[@]}")"; then
+    # Budget the agent table against what's left after the gate summary and
+    # any warning lines, since all of it lands in one Slack section block.
+    remaining_budget=$(( TOTAL_CHAR_BUDGET - ${#gate_summary} - ${#warnings_text} - 4 ))
+    [[ "${remaining_budget}" -lt 200 ]] && remaining_budget=200
+    if ! agent_table="$(build_agent_table "${qg7_json}" "${remaining_budget}" "${valid_qg4_files[@]}")"; then
       agent_table=$'*Agent Results*\n_agent-level summary unavailable (unexpected error building the table) — see workflow run for details_'
     fi
   else
     agent_table=$'*Agent Results*\n_agent-level summary unavailable (no readable outcome data) — see workflow run for details_'
   fi
-
-  warnings=()
-  [[ "${invalid_qg4_count}" -gt 0 ]] && warnings+=("⚠️ ${invalid_qg4_count} QG4 outcome file(s) could not be parsed and were excluded")
-  [[ "${invalid_qg7_count}" -gt 0 ]] && warnings+=("⚠️ ${invalid_qg7_count} QG7 outcome file(s) could not be parsed and were excluded")
-  for warning in "${warnings[@]+"${warnings[@]}"}"; do
-    agent_table="${agent_table}
-${warning}"
-  done
+  agent_table="${agent_table}${warnings_text}"
 fi
 
 if [[ -n "${agent_table}" ]]; then

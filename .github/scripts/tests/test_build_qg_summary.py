@@ -151,7 +151,7 @@ def test_malformed_outcome_file_does_not_crash_script(tmp_path):
     assert "could not be parsed" in output
 
 
-def test_agent_table_truncates_beyond_row_cap(tmp_path):
+def test_agent_table_truncates_beyond_char_budget(tmp_path):
     qg4_dir = tmp_path / "qg4-outcomes"
     qg7_dir = tmp_path / "qg7-outcomes"
     qg4_dir.mkdir()
@@ -174,7 +174,7 @@ def test_agent_table_truncates_beyond_row_cap(tmp_path):
             "QG2_RESULT": "success",
             "QG4_RESULT": "success",
             "QG7_RESULT": "skipped",
-            "MAX_AGENT_ROWS": "3",
+            "TOTAL_CHAR_BUDGET": "550",
         },
         qg4_dir,
         qg7_dir,
@@ -183,7 +183,45 @@ def test_agent_table_truncates_beyond_row_cap(tmp_path):
     assert "agent-00" in output
     assert "agent-02" in output
     assert "agent-09" not in output
-    assert "and 7 more agent(s)" in output
+    assert "more agent(s)" in output
+    assert len(output) <= 3000
+
+
+def test_agent_table_stays_under_slack_limit_with_many_long_names(tmp_path):
+    qg4_dir = tmp_path / "qg4-outcomes"
+    qg7_dir = tmp_path / "qg7-outcomes"
+    qg4_dir.mkdir()
+    qg7_dir.mkdir()
+
+    # Mirrors the longest real agent name in the repo's QG4 matrix
+    # (vanilla-python-openai-responses-agent, 37 chars) at a scale (100
+    # agents) approaching the repo's long-term template count target.
+    long_name = "vanilla-python-openai-responses-agent"
+    for i in range(100):
+        name = f"{long_name}-{i:03d}"
+        write_outcome(
+            qg4_dir,
+            name,
+            {
+                "name": name,
+                "dir": f"agents/vanilla_python/templates/{name}",
+                "status": "success",
+            },
+        )
+
+    output = run_summary(
+        {
+            "QG1_RESULT": "success",
+            "QG2_RESULT": "success",
+            "QG4_RESULT": "success",
+            "QG7_RESULT": "skipped",
+        },
+        qg4_dir,
+        qg7_dir,
+    )
+
+    assert len(output) <= 3000
+    assert "more agent(s)" in output
 
 
 def test_cancelled_agent_rendered_distinctly_from_skipped(tmp_path):
