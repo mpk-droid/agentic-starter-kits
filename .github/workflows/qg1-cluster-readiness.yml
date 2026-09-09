@@ -1,8 +1,6 @@
 name: "QG1: Cluster Readiness"
 
 on:
-  schedule:
-    - cron: "0 1 * * *"
   workflow_dispatch:
     inputs:
       cluster_profile:

@@ -194,11 +194,16 @@ def test_run_qg2_step_consumes_resolved_require_kserve_output():
     )
 
 
-def test_qg2_workflow_includes_dispatch_and_schedule():
+def test_qg2_workflow_is_dispatch_only():
+    # No schedule trigger: the orchestrator (quality-gates-pipeline.yml) owns
+    # the nightly cadence and already runs qg2 as a job. A standalone
+    # schedule here would fire a second, duplicate Slack notification for
+    # the same failure (see agent-deployment-test.yaml, which dropped its
+    # schedule trigger for the same reason once QG4 moved into the
+    # orchestrator). workflow_dispatch is kept for ad-hoc manual runs.
     workflow = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
     triggers = workflow[True] if True in workflow else workflow["on"]
-    assert "workflow_dispatch" in triggers
-    assert "schedule" in triggers
+    assert set(triggers) == {"workflow_dispatch"}
 
 
 def test_qg2_rbac_manifest_exists():
