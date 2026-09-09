@@ -114,6 +114,109 @@ def test_agent_matrix_reflects_qg4_and_qg7_outcomes(tmp_path):
     assert "excluded from QG7" in output
 
 
+def test_malformed_outcome_file_does_not_crash_script(tmp_path):
+    qg4_dir = tmp_path / "qg4-outcomes"
+    qg7_dir = tmp_path / "qg7-outcomes"
+    qg4_dir.mkdir()
+    qg7_dir.mkdir()
+
+    write_outcome(
+        qg4_dir,
+        "agent-good",
+        {
+            "name": "agent-good",
+            "dir": "agents/langgraph/templates/agent_good",
+            "status": "success",
+        },
+    )
+    bad_dir = qg4_dir / "qg4-outcome-agent-bad"
+    bad_dir.mkdir(parents=True)
+    (bad_dir / "result.json").write_text(
+        '{"name":"agent-bad","dir":"agents/lang', encoding="utf-8"
+    )
+
+    output = run_summary(
+        {
+            "QG1_RESULT": "success",
+            "QG2_RESULT": "success",
+            "QG4_RESULT": "failure",
+            "QG7_RESULT": "skipped",
+        },
+        qg4_dir,
+        qg7_dir,
+    )
+
+    assert "Gate Summary" in output
+    assert "agent-good" in output
+    assert "could not be parsed" in output
+
+
+def test_agent_table_truncates_beyond_row_cap(tmp_path):
+    qg4_dir = tmp_path / "qg4-outcomes"
+    qg7_dir = tmp_path / "qg7-outcomes"
+    qg4_dir.mkdir()
+    qg7_dir.mkdir()
+
+    for i in range(10):
+        write_outcome(
+            qg4_dir,
+            f"agent-{i:02d}",
+            {
+                "name": f"agent-{i:02d}",
+                "dir": f"agents/langgraph/templates/agent_{i:02d}",
+                "status": "success",
+            },
+        )
+
+    output = run_summary(
+        {
+            "QG1_RESULT": "success",
+            "QG2_RESULT": "success",
+            "QG4_RESULT": "success",
+            "QG7_RESULT": "skipped",
+            "MAX_AGENT_ROWS": "3",
+        },
+        qg4_dir,
+        qg7_dir,
+    )
+
+    assert "agent-00" in output
+    assert "agent-02" in output
+    assert "agent-09" not in output
+    assert "and 7 more agent(s)" in output
+
+
+def test_cancelled_agent_rendered_distinctly_from_skipped(tmp_path):
+    qg4_dir = tmp_path / "qg4-outcomes"
+    qg7_dir = tmp_path / "qg7-outcomes"
+    qg4_dir.mkdir()
+    qg7_dir.mkdir()
+
+    write_outcome(
+        qg4_dir,
+        "agent-cancelled",
+        {
+            "name": "agent-cancelled",
+            "dir": "agents/langgraph/templates/agent_cancelled",
+            "status": "cancelled",
+        },
+    )
+
+    output = run_summary(
+        {
+            "QG1_RESULT": "success",
+            "QG2_RESULT": "success",
+            "QG4_RESULT": "cancelled",
+            "QG7_RESULT": "skipped",
+        },
+        qg4_dir,
+        qg7_dir,
+    )
+
+    assert "⏱️" in output
+    assert "agent-cancelled" in output
+
+
 def test_agent_not_run_when_qg7_outcomes_missing(tmp_path):
     qg4_dir = tmp_path / "qg4-outcomes"
     qg7_dir = tmp_path / "qg7-outcomes"

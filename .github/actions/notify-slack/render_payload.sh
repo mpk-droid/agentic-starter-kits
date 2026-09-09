@@ -78,7 +78,7 @@ jq -n \
   --arg ref_name "${REF_NAME}" \
   --arg repository "${REPOSITORY}" \
   --arg timestamp "${TIMESTAMP}" \
-  --arg failed_jobs_text "${DETAILS_TEXT}" \
+  --arg details_text "${DETAILS_TEXT}" \
   --arg links_text "${LINKS_TEXT}" \
   '{
     text: $fallback_text,
@@ -128,7 +128,7 @@ jq -n \
             type: "section",
             text: {
               type: "mrkdwn",
-              text: $failed_jobs_text
+              text: $details_text
             }
           },
           {
