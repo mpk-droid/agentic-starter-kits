@@ -64,27 +64,24 @@ def test_notify_slack_depends_on_all_upstream_gates():
     }
 
 
-def test_qg1_assumes_explicit_dedicated_service_account():
-    # QG1 should declare its service account explicitly rather than relying
-    # on the assume-service-account action's implicit default, matching QG2's
-    # explicit pattern.
+def test_qg1_job_uses_qg1_gate_action():
+    # Cluster setup, service-account assumption, checker execution, and
+    # results upload are delegated to the qg1-gate composite action (shared
+    # with the standalone qg1-cluster-readiness.yml workflow) rather than
+    # duplicated inline here. The gate action's own service-account choice
+    # (qg1-readiness) is asserted in test_qg1_workflow_contract.py.
     jobs = _load_jobs()
-    assume_step = next(
-        step
-        for step in jobs["qg1"]["steps"]
-        if step.get("uses") == "./.github/actions/assume-service-account"
-    )
-    assert assume_step["with"]["service-account"] == "qg1-readiness"
+    uses_values = [step.get("uses", "") for step in jobs["qg1"]["steps"]]
+    assert "./.github/actions/qg1-gate" in uses_values
 
 
-def test_qg2_assumes_explicit_dedicated_service_account():
+def test_qg2_job_uses_qg2_gate_action():
+    # See test_qg1_job_uses_qg1_gate_action — same reasoning for QG2. The
+    # gate action's service-account choice (qg2-readiness) is asserted in
+    # test_qg2_workflow_contract.py.
     jobs = _load_jobs()
-    assume_step = next(
-        step
-        for step in jobs["qg2"]["steps"]
-        if step.get("uses") == "./.github/actions/assume-service-account"
-    )
-    assert assume_step["with"]["service-account"] == "qg2-readiness"
+    uses_values = [step.get("uses", "") for step in jobs["qg2"]["steps"]]
+    assert "./.github/actions/qg2-gate" in uses_values
 
 
 def test_job_order_places_qg1_and_qg2_before_qg4():
@@ -92,3 +89,67 @@ def test_job_order_places_qg1_and_qg2_before_qg4():
     job_order = list(jobs.keys())
     assert job_order.index("qg1") < job_order.index("qg4")
     assert job_order.index("qg2") < job_order.index("qg4")
+
+
+# Exact-text assertions on every `if` condition the DAG simulator
+# (test_orchestrator_dag_simulation.py) hardcodes its propagation logic
+# against. That simulator does NOT parse these strings — it encodes their
+# meaning directly. If a future edit changes any of these conditions, the
+# corresponding exact-match assertion below fails, forcing the simulator to
+# be reviewed and updated in step rather than silently drifting out of sync.
+
+
+def test_qg1_if_condition_matches_simulator_assumption():
+    jobs = _load_jobs()
+    assert (
+        jobs["qg1"]["if"]
+        == "github.repository == 'red-hat-data-services/agentic-starter-kits'"
+    )
+
+
+def test_qg2_if_condition_matches_simulator_assumption():
+    jobs = _load_jobs()
+    assert jobs["qg2"]["if"] == (
+        "needs.qg1.result == 'success' && "
+        "github.repository == 'red-hat-data-services/agentic-starter-kits'"
+    )
+
+
+def test_verify_cluster_connection_if_condition_matches_simulator_assumption():
+    jobs = _load_jobs()
+    assert jobs["verify-cluster-connection"]["if"] == (
+        "always() && github.repository == 'red-hat-data-services/agentic-starter-kits' "
+        "&& needs.qg1.result == 'success' && needs.qg2.result == 'success'"
+    )
+
+
+def test_qg4_if_condition_matches_simulator_assumption():
+    jobs = _load_jobs()
+    assert (
+        jobs["qg4"]["if"]
+        == "github.repository == 'red-hat-data-services/agentic-starter-kits'"
+    )
+
+
+def test_collect_qg4_if_condition_matches_simulator_assumption():
+    jobs = _load_jobs()
+    assert jobs["collect-qg4"]["if"] == (
+        "always() && github.repository == 'red-hat-data-services/agentic-starter-kits'"
+    )
+
+
+def test_qg7_if_condition_matches_simulator_assumption():
+    jobs = _load_jobs()
+    assert jobs["qg7"]["if"] == (
+        "always() && github.repository == 'red-hat-data-services/agentic-starter-kits' "
+        "&& needs.collect-qg4.result == 'success' "
+        "&& needs.collect-qg4.outputs.has_passing == 'true'"
+    )
+
+
+def test_notify_slack_if_condition_matches_simulator_assumption():
+    jobs = _load_jobs()
+    assert jobs["notify-slack"]["if"] == (
+        "!cancelled() && github.repository == 'red-hat-data-services/agentic-starter-kits' "
+        "&& (github.event_name != 'workflow_dispatch' || github.ref_name == 'main')"
+    )

@@ -14,7 +14,10 @@
 #                                   └─► notify-slack
 #
 # Ref: RFC Discussion #285
-# Depends on: .github/actions/run-qg1, .github/actions/run-qg2, .github/actions/run-qg4, .github/actions/run-qg7
+# Depends on: .github/actions/qg1-gate, .github/actions/qg2-gate, .github/actions/run-qg4, .github/actions/run-qg7
+# qg1-gate/qg2-gate are also used by the standalone qg1-cluster-readiness.yml
+# / qg2-platform-readiness.yml workflows, so cluster setup, service-account
+# assumption, checker execution, and results upload stay in one place.
 
 name: "Quality Gates Pipeline"
 
@@ -39,37 +42,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup cluster tools
-        uses: ./.github/actions/setup-cluster
+      - name: Run QG1 gate
+        uses: ./.github/actions/qg1-gate
         with:
           oc-token: ${{ secrets.OC_TOKEN }}
           cluster-api-url: ${{ secrets.CLUSTER_API_URL }}
-
-      - name: Assume dedicated QG1 service account
-        uses: ./.github/actions/assume-service-account
-        with:
-          service-account: qg1-readiness
-
-      - name: Run QG1
-        uses: ./.github/actions/run-qg1
-        with:
           cluster-profile: ${{ vars.QG1_CLUSTER_PROFILE || 'rhoai2' }}
           require-gpu: ${{ vars.QG1_REQUIRE_GPU || 'true' }}
           required-namespaces: ${{ vars.QG1_REQUIRED_NAMESPACES || 'ci-testing' }}
-          summary-json-path: qg1-results/summary.json
-          summary-md-path: qg1-results/summary.md
-
-      - name: Upload QG1 results
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: qg1-results
-          path: qg1-results/**
-          if-no-files-found: warn
-
-      - name: Logout
-        if: always()
-        run: oc logout || true
 
   # ── Stage 0b: QG2 — Platform readiness ─────────────────────────────────
   qg2:
@@ -88,38 +68,15 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup cluster tools
-        uses: ./.github/actions/setup-cluster
+      - name: Run QG2 gate
+        uses: ./.github/actions/qg2-gate
         with:
           oc-token: ${{ secrets.OC_TOKEN }}
           cluster-api-url: ${{ secrets.CLUSTER_API_URL }}
-
-      - name: Assume dedicated QG2 service account
-        uses: ./.github/actions/assume-service-account
-        with:
-          service-account: qg2-readiness
-
-      - name: Run QG2
-        uses: ./.github/actions/run-qg2
-        with:
           cluster-profile: ${{ vars.QG2_CLUSTER_PROFILE || 'rhoai2' }}
           cluster-type: ${{ vars.QG2_CLUSTER_TYPE || 'rhoai' }}
           require-dsc-ready: ${{ vars.QG2_REQUIRE_DSC_READY || 'true' }}
           require-kserve: ${{ vars.QG2_REQUIRE_KSERVE || 'true' }}
-          summary-json-path: qg2-results/summary.json
-          summary-md-path: qg2-results/summary.md
-
-      - name: Upload QG2 results
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: qg2-results
-          path: qg2-results/**
-          if-no-files-found: warn
-
-      - name: Logout
-        if: always()
-        run: oc logout || true
 
   # ── Pre-flight: verify cluster is reachable before fanning out ──────────
   verify-cluster-connection:

@@ -1,73 +1,23 @@
-"""Simulates the quality-gates-pipeline.yml job DAG to verify failure/skip
-propagation end-to-end, instead of just asserting condition strings.
+"""Explicit failure/skip propagation scenarios for quality-gates-pipeline.yml.
 
-This complements test_orchestrator_contract.py: the contract tests assert
-*that* certain substrings appear in `needs`/`if`, while these tests assert
-*what actually happens* to every job's result under different upstream
-outcomes, matching GitHub Actions' own evaluation semantics (including the
-implicit `success()` AND-ing applied to any custom `if` that doesn't use a
-status-check function).
+This intentionally does NOT parse or evaluate GitHub Actions `if:` expression
+syntax generically — an earlier version of this file did that with a
+regex+eval interpreter, which only handled a narrow subset of Actions
+grammar, silently hardcoded `cancelled()` to false, and could raise on
+perfectly valid expressions it didn't anticipate (e.g. `!=` comparisons).
+That created false confidence: tests passed without actually matching
+Actions semantics.
+
+Instead, `simulate_pipeline()` below hardcodes this pipeline's specific,
+known propagation logic as plain Python conditionals, with each branch
+commented against the exact job it mirrors. test_orchestrator_contract.py
+asserts the real `if:` text for each of these jobs matches character-for-
+character — if someone changes a condition in the workflow, that exact-match
+assertion fails and forces this file to be reviewed and updated too, rather
+than letting the two silently drift apart.
 """
 
 from __future__ import annotations
-
-import re
-from pathlib import Path
-
-import yaml
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "quality-gates-pipeline.yml"
-
-_STATUS_FNS = ("always()", "success()", "failure()", "cancelled()")
-_GITHUB_CONTEXT_RE = re.compile(r"github\.[\w.]+\s*(?:==|!=)\s*'[^']*'")
-_NEEDS_RESULT_RE = re.compile(r"needs\.([\w-]+)\.result\s*==\s*'([a-zA-Z_]+)'")
-_NEEDS_OUTPUT_RE = re.compile(r"needs\.([\w-]+)\.outputs\.([\w-]+)\s*==\s*'([^']*)'")
-
-
-def _load_jobs() -> dict:
-    workflow = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
-    return workflow["jobs"]
-
-
-def _needs_list(job: dict) -> list[str]:
-    needs = job.get("needs", [])
-    if isinstance(needs, str):
-        return [needs]
-    return list(needs)
-
-
-def _evaluate_condition(
-    cond: str | None, needs_results: dict[str, str], *, has_passing: bool
-) -> bool:
-    implicit_success = all(r == "success" for r in needs_results.values())
-
-    if cond is None:
-        return implicit_success
-
-    has_status_fn = any(fn in cond for fn in _STATUS_FNS)
-
-    expr = _GITHUB_CONTEXT_RE.sub("True", cond)
-    expr = _NEEDS_RESULT_RE.sub(
-        lambda m: str(needs_results.get(m.group(1)) == m.group(2)), expr
-    )
-    expr = _NEEDS_OUTPUT_RE.sub(
-        lambda m: str(has_passing) if m.group(2) == "has_passing" else "False", expr
-    )
-    expr = expr.replace("always()", "True")
-    expr = expr.replace(
-        "failure()", str(any(r == "failure" for r in needs_results.values()))
-    )
-    expr = expr.replace("success()", str(implicit_success))
-    expr = expr.replace("cancelled()", "False")
-    expr = expr.replace("&&", " and ").replace("||", " or ")
-    expr = re.sub(r"!(?!=)", " not ", expr)
-
-    explicit_result = bool(eval(expr, {"__builtins__": {}}, {}))  # noqa: S307
-
-    if has_status_fn:
-        return explicit_result
-    return implicit_success and explicit_result
 
 
 def simulate_pipeline(
@@ -76,26 +26,64 @@ def simulate_pipeline(
     """Return {job_name: 'success' | 'failure' | 'skipped'} for every job.
 
     `job_outcomes` forces the result of a job *if it runs* (default
-    'success' when unspecified). Jobs whose `if` evaluates to false are
-    recorded as 'skipped', mirroring `needs.<job>.result` downstream.
+    'success' when unspecified). `has_passing` simulates collect-qg4's
+    `has_passing` output when qg4 actually ran; it has no effect if qg4 was
+    skipped, since a fully skipped qg4 produces no outcome artifacts and the
+    real build-pass-list script forces has_passing to false in that case.
     """
     job_outcomes = job_outcomes or {}
-    jobs = _load_jobs()
     results: dict[str, str] = {}
-    for name, job in jobs.items():
-        needs_results = {n: results[n] for n in _needs_list(job)}
-        # collect-qg4's has_passing output can only be true if qg4 actually
-        # ran (produced outcome artifacts); a fully skipped qg4 means no
-        # artifacts, so the real build-pass-list script forces has_passing
-        # to false regardless of what the caller requested.
-        effective_has_passing = has_passing and results.get("qg4") not in (
-            None,
-            "skipped",
-        )
-        runs = _evaluate_condition(
-            job.get("if"), needs_results, has_passing=effective_has_passing
-        )
-        results[name] = job_outcomes.get(name, "success") if runs else "skipped"
+
+    def run(name: str, default: str = "success") -> None:
+        results[name] = job_outcomes.get(name, default)
+
+    def skip(name: str) -> None:
+        results[name] = "skipped"
+
+    # qg1: if: github.repository == '...' (no needs) -> always attempted.
+    run("qg1")
+
+    # qg2: if: needs.qg1.result == 'success' && github.repository == '...'
+    if results["qg1"] == "success":
+        run("qg2")
+    else:
+        skip("qg2")
+
+    # verify-cluster-connection: if: always() && github.repository == '...'
+    # && needs.qg1.result == 'success' && needs.qg2.result == 'success'
+    if results["qg1"] == "success" and results["qg2"] == "success":
+        run("verify-cluster-connection")
+    else:
+        skip("verify-cluster-connection")
+
+    # qg4: if: github.repository == '...' — no status-check function, so
+    # Actions implicitly ANDs this with success() over `needs`.
+    if results["verify-cluster-connection"] == "success":
+        run("qg4")
+    else:
+        skip("qg4")
+
+    # collect-qg4: if: always() && github.repository == '...' — no
+    # needs.qg4.result check at all, so it runs unconditionally even when
+    # qg4 was fully skipped.
+    run("collect-qg4")
+
+    # qg7: if: always() && github.repository == '...' &&
+    # needs.collect-qg4.result == 'success' &&
+    # needs.collect-qg4.outputs.has_passing == 'true'
+    qg4_produced_artifacts = results["qg4"] != "skipped"
+    effective_has_passing = has_passing and qg4_produced_artifacts
+    if results["collect-qg4"] == "success" and effective_has_passing:
+        run("qg7")
+    else:
+        skip("qg7")
+
+    # notify-slack: if: !cancelled() && github.repository == '...' &&
+    # (github.event_name != 'workflow_dispatch' || github.ref_name == 'main')
+    # Always runs (never cancelled in these scenarios), regardless of
+    # upstream results — that's what lets it report a QG1/QG2 failure.
+    run("notify-slack")
+
     return results
 
 
@@ -156,6 +144,14 @@ def test_qg4_failure_does_not_skip_collect_qg4_or_qg7():
 def test_qg7_skipped_when_no_agents_pass_qg4():
     results = simulate_pipeline(has_passing=False)
     assert results["collect-qg4"] == "success"
+    assert results["qg7"] == "skipped"
+
+
+def test_qg7_skipped_when_qg4_fully_skipped_even_if_has_passing_requested():
+    # Guards the has_passing/qg4-skip interaction: a caller can't force qg7
+    # to run by passing has_passing=True if qg4 never actually executed.
+    results = simulate_pipeline({"qg1": "failure"}, has_passing=True)
+    assert results["qg4"] == "skipped"
     assert results["qg7"] == "skipped"
 
 
